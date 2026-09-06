@@ -27,14 +27,29 @@ as a security boundary; Supabase RLS must remain the final enforcement layer.
 
 ## Local Development
 
+This project uses FVM to pin Flutter 3.44.9 for repository-local development.
+Install FVM locally if needed, then initialize the project SDK with:
+
 ```bash
-flutter pub get
+fvm install
+```
+
+```bash
+fvm flutter pub get
 npm install
 cp env.example.json env.json
-flutter run -d chrome --dart-define-from-file=env.json
+fvm flutter run -d chrome --dart-define-from-file=env.json
 ```
 
 `env.json` is intentionally ignored by Git.
+
+Use FVM for Flutter commands in this repository:
+
+```bash
+fvm flutter analyze --no-fatal-infos --no-fatal-warnings
+fvm flutter test
+fvm flutter run
+```
 
 Start local Supabase when database-backed features are needed:
 
