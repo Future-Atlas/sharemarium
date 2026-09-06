@@ -173,11 +173,11 @@ book_case/
 ## Useful Commands
 
 ```bash
-flutter clean
-flutter pub get
-flutter analyze
-flutter test
-flutter build web --release --dart-define-from-file=env.json
+fvm flutter clean
+fvm flutter pub get
+fvm flutter analyze
+fvm flutter test
+fvm flutter build web --release --dart-define-from-file=env.json
 npm ci
 npm run test:api
 supabase test db
