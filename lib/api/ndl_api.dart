@@ -71,14 +71,11 @@ class NdlApi {
       urlString += '&any=${Uri.encodeComponent("本")}';
     }
 
-    print('📡 [NdlApi] リクエスト送信URL: $urlString');
-
     try {
       final uri = Uri.parse(urlString);
       final response = await http.get(uri);
 
       if (response.statusCode != 200) {
-        print('❌ [NdlApi] エラーレスポンス: HTTP ${response.statusCode}');
         return [];
       }
 
@@ -137,10 +134,8 @@ class NdlApi {
         );
       }
 
-      print('✨ [NdlApi] 解析成功：${books.length} 件の書籍データをパースしました');
       return books;
     } catch (e) {
-      print('❌ [NdlApi] 通信または解析中に重大なエラーが発生しました: $e');
       return [];
     }
   }

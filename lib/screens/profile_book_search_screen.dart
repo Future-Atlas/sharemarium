@@ -92,17 +92,9 @@ class _ProfileBookSearchScreenState extends State<ProfileBookSearchScreen> {
     if (!mounted) return;
     _wantedStatusFutures[book.id] = service.isBookWantedByCurrentUser(book.id);
     setState(() {});
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          result == WantToReadToggleResult.added
-              ? '「読みたい！」に追加しました。'
-              : result == WantToReadToggleResult.removed
-              ? '「読みたい！」から解除しました。'
-              : '「読みたい！」を更新できませんでした。',
-        ),
-      ),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(result.message)));
   }
 
   @override
@@ -284,9 +276,11 @@ class _ProfileBookSearchScreenState extends State<ProfileBookSearchScreen> {
                                     borderRadius: BorderRadius.circular(18),
                                   ),
                                 ),
-                                child: const Text(
-                                  '読了',
-                                  style: TextStyle(fontWeight: FontWeight.bold),
+                                child: Text(
+                                  isRead ? '読了済み' : '読了',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
                               );
                             },

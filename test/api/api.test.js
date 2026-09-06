@@ -84,7 +84,11 @@ test("Rakuten proxy returns 502 when upstream request fails", async () => {
 
 test("sitemap returns XML and hides non-production pages from robots", async () => {
   const previous = process.env.VERCEL_ENV;
+  const previousFetch = global.fetch;
   delete process.env.VERCEL_ENV;
+  global.fetch = async () => {
+    throw new Error("network disabled in test");
+  };
   delete require.cache[require.resolve("../../api/sitemap")];
   const sitemap = require("../../api/sitemap");
   const res = responseRecorder();
@@ -92,20 +96,120 @@ test("sitemap returns XML and hides non-production pages from robots", async () 
   assert.equal(res.statusCode, 200);
   assert.match(res.body, /<urlset/);
   assert.equal(res.headers["X-Robots-Tag"], "noindex, nofollow");
+  assert.match(res.headers["X-Sitemap-Diagnostics"], /profiles=/);
   if (previous === undefined) delete process.env.VERCEL_ENV;
   else process.env.VERCEL_ENV = previous;
+  global.fetch = previousFetch;
 });
 
-test("production sitemap omits fixed sample book URLs", async () => {
+test("production sitemap includes fixed pages and public profile canonical URLs", async () => {
+  const previousEnv = {
+    VERCEL_ENV: process.env.VERCEL_ENV,
+    SUPABASE_URL: process.env.SUPABASE_URL,
+    SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY,
+  };
+  const previousFetch = global.fetch;
   process.env.VERCEL_ENV = "production";
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_ANON_KEY = "anon-key";
+  global.fetch = async () => ({
+    ok: true,
+    json: async () => [
+      {
+        id: "public-profile",
+        username: "公開ユーザー",
+        user_id: "reader_1",
+        bio: "読書記録を公開しています。",
+        read_count: 3,
+        is_private: false,
+        is_suspended: false,
+      },
+      {
+        id: "private-user",
+        username: "private",
+        user_id: "private_user",
+        bio: "private bio",
+        read_count: 10,
+        is_private: true,
+        is_suspended: false,
+      },
+      {
+        id: "suspended-user",
+        username: "suspended",
+        user_id: "suspended_user",
+        bio: "suspended bio",
+        read_count: 10,
+        is_private: false,
+        is_suspended: true,
+      },
+      {
+        id: "empty-profile",
+        username: "empty",
+        user_id: "empty_user",
+        bio: "",
+        read_count: 0,
+        is_private: false,
+        is_suspended: false,
+      },
+    ],
+  });
   delete require.cache[require.resolve("../../api/sitemap")];
   const sitemap = require("../../api/sitemap");
   const res = responseRecorder();
   await sitemap({}, res);
   assert.equal(res.statusCode, 200);
+  assert.match(res.body, /<loc>https:\/\/sharemarium\.com\/<\/loc>/);
+  assert.match(res.body, /<loc>https:\/\/sharemarium\.com\/privacy<\/loc>/);
+  assert.match(
+    res.body,
+    /<loc>https:\/\/sharemarium\.com\/users\/reader_1<\/loc>/,
+  );
+  assert.doesNotMatch(res.body, /\/users\/private_user/);
+  assert.doesNotMatch(res.body, /\/users\/suspended_user/);
+  assert.doesNotMatch(res.body, /\/users\/empty_user/);
+  assert.doesNotMatch(res.body, /\/user\//);
+  assert.doesNotMatch(res.body, /\/profile\//);
   assert.doesNotMatch(res.body, /\/book\/konbini-ningen/);
   assert.doesNotMatch(res.body, /\/book\/midnight-library/);
-  delete process.env.VERCEL_ENV;
+  assert.doesNotMatch(res.body, /\/genre\/recommended/);
+  assert.doesNotMatch(res.body, /\/genre\/western/);
+  assert.doesNotMatch(res.body, /\/genre\/popular/);
+  assert.equal(res.headers["X-Sitemap-Diagnostics"], "profiles=ok");
+  for (const [key, value] of Object.entries(previousEnv)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+  global.fetch = previousFetch;
+});
+
+test("production sitemap falls back to fixed URLs when Supabase fails", async () => {
+  const previousEnv = {
+    VERCEL_ENV: process.env.VERCEL_ENV,
+    SUPABASE_URL: process.env.SUPABASE_URL,
+    SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY,
+  };
+  const previousFetch = global.fetch;
+  process.env.VERCEL_ENV = "production";
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_ANON_KEY = "anon-key";
+  global.fetch = async () => {
+    throw new Error("supabase unavailable");
+  };
+  delete require.cache[require.resolve("../../api/sitemap")];
+  const sitemap = require("../../api/sitemap");
+  const res = responseRecorder();
+  await sitemap({}, res);
+  assert.equal(res.statusCode, 200);
+  assert.match(res.body, /<loc>https:\/\/sharemarium\.com\/<\/loc>/);
+  assert.doesNotMatch(res.body, /\/users\//);
+  assert.doesNotMatch(res.body, /\/book\//);
+  assert.doesNotMatch(res.body, /konbini-ningen|midnight-library/);
+  assert.equal(res.headers["X-Sitemap-Diagnostics"], "profiles=error");
+  for (const [key, value] of Object.entries(previousEnv)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+  global.fetch = previousFetch;
 });
 
 test("production SEO disables sample fallback by default", async () => {
@@ -282,6 +386,31 @@ test("Flutter placeholder ad banner is not rendered", () => {
 
   assert.doesNotMatch(screen, /AdBanner|ad_banner/);
   assert.equal(fs.existsSync(bannerPath), false);
+});
+
+test("Flutter book routes do not resolve legacy sample slugs", () => {
+  const bookListScreen = fs.readFileSync(
+    path.join(__dirname, "../../lib/screens/book_list_screen.dart"),
+    "utf8",
+  );
+  const main = fs.readFileSync(
+    path.join(__dirname, "../../lib/main.dart"),
+    "utf8",
+  );
+  const productionSource = `${bookListScreen}\n${main}`;
+  const legacySampleSlugs = [
+    "konbini-ningen",
+    "fune-wo-amu",
+    "midnight-library",
+    "atomic-habits",
+    "baton-wa-watasareta",
+    "nanji-hoshi-no-gotoku",
+  ];
+
+  assert.doesNotMatch(productionSource, /_titleForBookSlug|initialBookSlug/);
+  for (const slug of legacySampleSlugs) {
+    assert.doesNotMatch(productionSource, new RegExp(slug));
+  }
 });
 
 test("AdSense crawlers use the SEO HTML routing", () => {

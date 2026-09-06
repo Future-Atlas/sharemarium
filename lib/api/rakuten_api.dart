@@ -4,6 +4,12 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/book.dart';
+import '../utils/dev_logger.dart';
+
+// Kept for local troubleshooting. `debugLog` is silent outside debug builds.
+void debugPrint(String? message, {int? wrapWidth}) {
+  debugLog(message, wrapWidth: wrapWidth);
+}
 
 class RakutenApi {
   static const String _proxyBaseUrl = String.fromEnvironment(

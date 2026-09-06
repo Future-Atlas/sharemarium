@@ -35,6 +35,205 @@ class UserProfileScreen extends StatefulWidget {
   State<UserProfileScreen> createState() => _UserProfileScreenState();
 }
 
+class _ProfileBookPostsPanel extends StatefulWidget {
+  const _ProfileBookPostsPanel({
+    required this.postsFuture,
+    required this.onProfileTap,
+    required this.onReply,
+    required this.onReport,
+    required this.onReplyReport,
+  });
+
+  final Future<({List<Post> posts, Map<String, List<PostReply>> replies})>
+  postsFuture;
+  final Future<void> Function(String profileId) onProfileTap;
+  final Future<void> Function(Post post, [PostReply? parentReply]) onReply;
+  final Future<void> Function(String postId) onReport;
+  final Future<void> Function(PostReply reply) onReplyReport;
+
+  @override
+  State<_ProfileBookPostsPanel> createState() => _ProfileBookPostsPanelState();
+}
+
+class _ProfileBookPostsPanelState extends State<_ProfileBookPostsPanel> {
+  List<Post> _posts = const [];
+  Map<String, List<PostReply>> _replies = const {};
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final result = await widget.postsFuture;
+    if (!mounted) return;
+    setState(() {
+      _posts = result.posts;
+      _replies = result.replies;
+      _isLoading = false;
+    });
+  }
+
+  Future<void> _toggleReaction(Post post, PostReactionType reaction) async {
+    final index = _posts.indexWhere((candidate) => candidate.id == post.id);
+    if (index < 0) return;
+    setState(() {
+      final updated = List<Post>.from(_posts);
+      updated[index] = post.withToggledReaction(reaction);
+      _posts = updated;
+    });
+    final success = await Provider.of<SupabaseService>(
+      context,
+      listen: false,
+    ).setPostReaction(post.id, reaction);
+    if (!mounted || success) return;
+    setState(() {
+      final updated = List<Post>.from(_posts);
+      updated[index] = post;
+      _posts = updated;
+    });
+  }
+
+  Future<void> _toggleWantToRead(Post post) async {
+    final index = _posts.indexWhere((candidate) => candidate.id == post.id);
+    if (index < 0) return;
+    setState(() {
+      final updated = List<Post>.from(_posts);
+      updated[index] = post.withToggledWantToRead();
+      _posts = updated;
+    });
+    final result = await Provider.of<SupabaseService>(context, listen: false)
+        .toggleWantToRead(
+          book: Book(
+            id: post.bookId,
+            title: post.bookTitle,
+            author: post.bookAuthor,
+            publisher: '',
+            pubDate: '',
+            isbn: post.bookId,
+            coverUrl: post.bookCoverUrl,
+          ),
+          sourcePostId: post.id,
+        );
+    if (!mounted || !result.shouldRestoreOptimisticState) return;
+    setState(() {
+      final updated = List<Post>.from(_posts);
+      updated[index] = post;
+      _posts = updated;
+    });
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(result.message)));
+  }
+
+  Future<void> _openEngagementUsers(
+    Post post, {
+    PostReactionType? reaction,
+    bool wantToRead = false,
+  }) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (routeContext) => PostEngagementUsersScreen(
+          postId: post.id,
+          title: wantToRead ? '「読みたい！」したユーザー' : '${reaction!.symbol}したユーザー',
+          reaction: reaction,
+          wantToRead: wantToRead,
+          onProfileTap: (profile) {
+            Navigator.of(routeContext).pop();
+            widget.onProfileTap(profile.id);
+          },
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    final currentProfileId = Provider.of<SupabaseService>(
+      context,
+      listen: false,
+    ).activeProfileId;
+    return Container(
+      height: 460,
+      padding: const EdgeInsets.fromLTRB(10, 12, 6, 8),
+      decoration: BoxDecoration(
+        color: isDarkMode ? Colors.black : Colors.white,
+        border: Border.all(color: isDarkMode ? Colors.white : Colors.black),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 10),
+            child: Text(
+              'この本の投稿',
+              style: TextStyle(
+                color: isDarkMode ? Colors.white : Colors.black,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _posts.isEmpty
+                ? Center(
+                    child: Text(
+                      'この本に関する投稿はまだありません。',
+                      style: TextStyle(
+                        color: isDarkMode ? Colors.white70 : Colors.black54,
+                      ),
+                    ),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.only(right: 8),
+                    itemCount: _posts.length,
+                    itemBuilder: (context, index) {
+                      final post = _posts[index];
+                      final isOwnPost = post.profileId == currentProfileId;
+                      return PostCard(
+                        key: ValueKey('profile-book-${post.id}'),
+                        post: post,
+                        replies: _replies[post.id] ?? const [],
+                        concealSpoiler: !isOwnPost,
+                        concealReplySpoiler: (reply) =>
+                            reply.profileId != currentProfileId,
+                        onUserTap: () => widget.onProfileTap(post.profileId),
+                        onReaction: isOwnPost
+                            ? null
+                            : (reaction) => _toggleReaction(post, reaction),
+                        onWantToRead: isOwnPost
+                            ? null
+                            : () => _toggleWantToRead(post),
+                        onReactionUsers: (reaction) =>
+                            _openEngagementUsers(post, reaction: reaction),
+                        onWantToReadUsers: () =>
+                            _openEngagementUsers(post, wantToRead: true),
+                        onReport: isOwnPost
+                            ? null
+                            : () => widget.onReport(post.id),
+                        onReply: (parentReply) async {
+                          await widget.onReply(post, parentReply);
+                        },
+                        onReplyReport: widget.onReplyReport,
+                        canReportReply: (reply) =>
+                            currentProfileId.isEmpty ||
+                            reply.profileId != currentProfileId,
+                        onReplyUserTap: widget.onProfileTap,
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _UserProfileScreenState extends State<UserProfileScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
@@ -449,7 +648,7 @@ class _UserProfileScreenState extends State<UserProfileScreen>
     );
     _pendingReactionPostIds.remove(pendingKey);
     if (!mounted) return;
-    if (result == WantToReadToggleResult.failed && previous != null) {
+    if (result.shouldRestoreOptimisticState && previous != null) {
       setState(() {
         final restoreIndex = _userPosts.indexWhere((p) => p.id == previous.id);
         if (restoreIndex >= 0) {
@@ -458,6 +657,9 @@ class _UserProfileScreenState extends State<UserProfileScreen>
           _userPosts = restored;
         }
       });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(result.message)));
     } else {
       final profileId = Provider.of<SupabaseService>(
         context,
@@ -574,25 +776,6 @@ class _UserProfileScreenState extends State<UserProfileScreen>
         result == FavoriteToggleResult.removed) {
       await _loadProfileData();
     }
-  }
-
-  Future<void> _openBookshelfActions(Book book) async {
-    if (!_isOwnProfile) return;
-    final isFavorite = _isFavorited(book.id);
-    final shouldToggle = await showModalBottomSheet<bool>(
-      context: context,
-      builder: (sheetContext) => SafeArea(
-        child: ListTile(
-          leading: Icon(
-            isFavorite ? Icons.favorite : Icons.favorite_border,
-            color: const Color(0xFFD00303),
-          ),
-          title: Text(isFavorite ? 'お気に入りから解除' : 'お気に入りに追加'),
-          onTap: () => Navigator.of(sheetContext).pop(true),
-        ),
-      ),
-    );
-    if (shouldToggle == true && mounted) await _toggleFavorite(book.id);
   }
 
   Future<void> _deletePost(Post post) async {
@@ -762,12 +945,12 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                             'My 本棚はありません。',
                             showDescription: true,
                             compactThreeColumn: true,
-                            enableFavoriteAction: true,
                           ),
                           _buildFavoritesTab(),
                           _buildGridTab(
                             _wantToRead,
                             '「読みたい！」作品はありません。',
+                            showDescription: true,
                             compactThreeColumn: true,
                           ),
                         ],
@@ -1046,6 +1229,7 @@ class _UserProfileScreenState extends State<UserProfileScreen>
 
   Widget _buildTabBar() {
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    final isMobile = MediaQuery.sizeOf(context).width < 600;
     final tabBackgroundColor = isDarkMode
         ? const Color(0xFF424242)
         : const Color(0xFFBDBDBD);
@@ -1053,13 +1237,16 @@ class _UserProfileScreenState extends State<UserProfileScreen>
     final selectedTextColor = isDarkMode ? Colors.black : Colors.white;
     final unselectedTextColor = isDarkMode ? Colors.white : Colors.black;
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
+      margin: EdgeInsets.zero,
       decoration: BoxDecoration(
         color: tabBackgroundColor,
         borderRadius: BorderRadius.circular(16),
       ),
       child: TabBar(
         controller: _tabController,
+        isScrollable: isMobile,
+        tabAlignment: isMobile ? TabAlignment.start : null,
+        labelPadding: EdgeInsets.zero,
         indicator: BoxDecoration(
           color: selectedBackgroundColor,
           borderRadius: BorderRadius.circular(12),
@@ -1074,12 +1261,36 @@ class _UserProfileScreenState extends State<UserProfileScreen>
           fontWeight: FontWeight.w500,
           fontSize: 13,
         ),
-        tabs: const [
-          Tab(text: '投稿'),
-          Tab(text: 'My 本棚'),
-          Tab(text: 'お気に入り'),
-          Tab(text: '読みたい！'),
-        ],
+        tabs: isMobile
+            ? const [
+                Tab(
+                  child: SizedBox(width: 56, child: Center(child: Text('投稿'))),
+                ),
+                Tab(
+                  child: SizedBox(
+                    width: 74,
+                    child: Center(child: Text('My 本棚')),
+                  ),
+                ),
+                Tab(
+                  child: SizedBox(
+                    width: 100,
+                    child: Center(child: Text('お気に入り')),
+                  ),
+                ),
+                Tab(
+                  child: SizedBox(
+                    width: 94,
+                    child: Center(child: Text('読みたい！')),
+                  ),
+                ),
+              ]
+            : const [
+                Tab(text: '投稿'),
+                Tab(text: 'My 本棚'),
+                Tab(text: 'お気に入り'),
+                Tab(text: '読みたい！'),
+              ],
       ),
     );
   }
@@ -1143,7 +1354,6 @@ class _UserProfileScreenState extends State<UserProfileScreen>
     String emptyMessage, {
     bool showDescription = false,
     bool compactThreeColumn = false,
-    bool enableFavoriteAction = false,
   }) {
     if (booksList.isEmpty) {
       return _buildEmptyState(emptyMessage);
@@ -1178,9 +1388,7 @@ class _UserProfileScreenState extends State<UserProfileScreen>
               coverHeightRatio: showDescription ? (2 / 3) : (1 / 3),
               showDescription: showDescription,
               descriptionMaxLines: 3,
-              onTap: enableFavoriteAction
-                  ? () => _openBookshelfActions(book)
-                  : null,
+              onTap: () => _showSearchedBookDetailDialog(book),
             );
           },
         );
@@ -1241,7 +1449,7 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                 ? 0.0
                 : matchingPosts.first.rating;
             return GestureDetector(
-              onTap: _isOwnProfile ? () => _openBookshelfActions(book) : null,
+              onTap: () => _showSearchedBookDetailDialog(book),
               child: Container(
                 clipBehavior: Clip.antiAlias,
                 decoration: BoxDecoration(
@@ -1473,21 +1681,16 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.black,
                               foregroundColor: const Color(0xFFFF1F1F),
+                              disabledBackgroundColor: Colors.black,
+                              disabledForegroundColor: const Color(0xFF00BFFF),
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 18,
                               ),
                             ),
-                            onPressed: () async {
-                              if (!isRead) {
-                                await service.markBookAsRead(bookId: book.id);
-                                if (mounted) {
-                                  await _loadProfileData();
-                                }
-                              }
-                              if (!mounted) return;
-                              _showSearchedBookDetailDialog(book);
-                            },
-                            child: Text(isRead ? '投稿する' : '読了'),
+                            onPressed: isRead
+                                ? null
+                                : () => _showSearchedBookDetailDialog(book),
+                            child: Text(isRead ? '読了済み' : '読了'),
                           ),
                         );
                       },
@@ -1534,64 +1737,195 @@ class _UserProfileScreenState extends State<UserProfileScreen>
   }
 
   Future<void> _showSearchedBookDetailDialog(Book book) async {
+    final service = Provider.of<SupabaseService>(context, listen: false);
+    final isReadFuture = service.isBookReadByCurrentUser(bookId: book.id);
+    final isWantedFuture = service.isBookWantedByCurrentUser(book.id);
+    final postsFuture = () async {
+      final posts = await service.fetchPostsForBook(book.id);
+      final replies = await service.fetchRepliesForPosts(
+        posts.map((post) => post.id).toList(growable: false),
+      );
+      return (posts: posts, replies: replies);
+    }();
+
     await showDialog(
       context: context,
-      builder: (context) {
-        return AlertDialog(
-          backgroundColor: const Color(0xFFE9E9E9),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          content: SizedBox(
-            width: 640,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  book.title,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF1E1E1E),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  book.author,
-                  style: TextStyle(fontSize: 14, color: Colors.grey[700]),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  book.publisher.trim().isEmpty ? '出版社不明' : book.publisher,
-                  style: TextStyle(fontSize: 13, color: Colors.grey[600]),
-                ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  height: MediaQuery.sizeOf(context).height < 600 ? 160 : 220,
-                  child: Scrollbar(
-                    thumbVisibility: true,
-                    child: SingleChildScrollView(
-                      child: Text(
-                        book.description.trim().isEmpty
-                            ? 'あらすじ情報はまだ登録されていません。'
-                            : book.description,
+      builder: (dialogContext) {
+        final narrow = MediaQuery.sizeOf(dialogContext).width < 600;
+        return Dialog(
+          backgroundColor: const Color(0xFFE6E6E6),
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 20,
+            vertical: 24,
+          ),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: 920,
+              maxHeight: MediaQuery.sizeOf(dialogContext).height * 0.9,
+            ),
+            child: SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: DefaultTextStyle.merge(
+                  style: const TextStyle(color: Color(0xFF1E1E1E)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (book.coverUrl.trim().isNotEmpty)
+                        Center(
+                          child: SizedBox(
+                            height: narrow ? 220 : 300,
+                            child: Image.network(
+                              book.coverUrl,
+                              fit: BoxFit.contain,
+                              errorBuilder: (_, _, _) => const Icon(
+                                Icons.menu_book,
+                                size: 64,
+                                color: Colors.black54,
+                              ),
+                            ),
+                          ),
+                        ),
+                      const SizedBox(height: 12),
+                      Text(
+                        book.title.trim().isEmpty ? 'タイトル不明' : book.title,
                         style: const TextStyle(
-                          fontSize: 14,
-                          color: Color(0xFF1E1E1E),
-                          height: 1.5,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
-                    ),
+                      const SizedBox(height: 6),
+                      Text(book.author.trim().isEmpty ? '著者不明' : book.author),
+                      const SizedBox(height: 3),
+                      Text(
+                        book.publisher.trim().isEmpty
+                            ? '出版社不明'
+                            : book.publisher,
+                        style: TextStyle(color: Colors.grey[700]),
+                      ),
+                      const SizedBox(height: 12),
+                      FutureBuilder<bool>(
+                        future: isReadFuture,
+                        builder: (context, snapshot) {
+                          final isRead = snapshot.data ?? false;
+                          final checking =
+                              snapshot.connectionState ==
+                              ConnectionState.waiting;
+                          return Row(
+                            children: [
+                              Expanded(
+                                child: ElevatedButton(
+                                  onPressed: isRead || checking
+                                      ? null
+                                      : () async {
+                                          Navigator.of(dialogContext).pop();
+                                          final posted =
+                                              await showPostComposerDialog(
+                                                context: this.context,
+                                                book: book,
+                                              );
+                                          if (posted && mounted) {
+                                            await _loadProfileData();
+                                          }
+                                        },
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.black,
+                                    foregroundColor: const Color(0xFFFF1F1F),
+                                    disabledBackgroundColor: Colors.black,
+                                    disabledForegroundColor: const Color(
+                                      0xFF00BFFF,
+                                    ),
+                                  ),
+                                  child: Text(isRead ? '読了済み' : '読了'),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: FutureBuilder<bool>(
+                                  future: isWantedFuture,
+                                  builder: (context, wantedSnapshot) {
+                                    final wanted = wantedSnapshot.data ?? false;
+                                    final checking =
+                                        wantedSnapshot.connectionState ==
+                                        ConnectionState.waiting;
+                                    return ElevatedButton(
+                                      onPressed: checking
+                                          ? null
+                                          : () async {
+                                              final result = await service
+                                                  .toggleWantToRead(book: book);
+                                              if (!mounted) return;
+                                              ScaffoldMessenger.of(
+                                                this.context,
+                                              ).showSnackBar(
+                                                SnackBar(
+                                                  content: Text(result.message),
+                                                ),
+                                              );
+                                              if (!result
+                                                      .shouldRestoreOptimisticState &&
+                                                  dialogContext.mounted) {
+                                                Navigator.of(
+                                                  dialogContext,
+                                                ).pop();
+                                              }
+                                            },
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.black,
+                                        foregroundColor: Colors.amber,
+                                      ),
+                                      child: Text(wanted ? '読みたい！済み' : '読みたい！'),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 14),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        color: const Color(0xFFD8D8D8),
+                        child: SizedBox(
+                          height: narrow ? 160 : 220,
+                          child: Scrollbar(
+                            thumbVisibility: true,
+                            child: SingleChildScrollView(
+                              child: Text(
+                                book.description.trim().isEmpty
+                                    ? 'あらすじ情報はまだ登録されていません。'
+                                    : book.description,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  height: 1.5,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      _ProfileBookPostsPanel(
+                        postsFuture: postsFuture,
+                        onProfileTap: _openReplyProfile,
+                        onReply: _replyToPost,
+                        onReport: _reportPost,
+                        onReplyReport: _reportReply,
+                      ),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton(
+                          onPressed: () => Navigator.of(dialogContext).pop(),
+                          child: const Text('閉じる'),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ],
+              ),
             ),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('閉じる'),
-            ),
-          ],
         );
       },
     );

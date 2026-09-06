@@ -203,8 +203,6 @@ class BookRepository {
   /// ここでは最初から表紙画像が確実に手に入る楽天APIをページ指定で動かします。
   Future<List<Book>> fetchBooksByGenre(String genre, {int page = 1}) async {
     try {
-      print('📦 [Repository] 楽天APIからジャンル本を取得します: $genre (Page: $page)');
-
       // ⏱️【429エラー（連打）対策】
       // コントローラーが一斉に複数のジャンルを要求してきた際、
       // 楽天APIがパンクして429エラーを返さないよう、通信の直前に必ず「1秒の休憩」を挟みます。
@@ -226,8 +224,7 @@ class BookRepository {
         });
       }
       return _randomRankedSelection(filtered, count: 9);
-    } catch (e) {
-      print('❌ [Repository] 楽天ジャンル本の取得でエラーが発生しました: $e');
+    } catch (_) {
       return [];
     }
   }
@@ -249,15 +246,13 @@ class BookRepository {
   /// 楽天APIから取得します。
   Future<List<Book>> fetchAllBooks() async {
     try {
-      print('📦 [Repository] 楽天APIから全件（初期表示）を取得します');
       final rakutenBooks = await RakutenApi.searchBySelectedGenre(
         selectedGenre: '',
         page: 1,
         count: 10,
       );
       return _filterForViewer(rakutenBooks);
-    } catch (e) {
-      print('❌ [Repository] 楽天全件取得でエラーが発生しました: $e');
+    } catch (_) {
       return [];
     }
   }
@@ -275,8 +270,6 @@ class BookRepository {
     }
 
     try {
-      print('📦 [Repository] 楽天APIからキーワード検索を行います: $query (Page: $page)');
-
       final rakutenBooks = await RakutenApi.searchByKeyword(
         keyword: query,
         page: page,
@@ -289,8 +282,7 @@ class BookRepository {
         _filterForViewer(rakutenBooks),
         query,
       ).take(count).toList();
-    } catch (e) {
-      print('❌ [Repository] 楽天検索でエラーが発生しました: $e');
+    } catch (_) {
       return [];
     }
   }

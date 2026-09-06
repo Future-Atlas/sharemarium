@@ -34,6 +34,10 @@
   ],
   "routes": [
     {
+      "src": "/sitemap.xml",
+      "dest": "/api/sitemap"
+    },
+    {
       "src": "/sitemap$",
       "status": 308,
       "headers": {

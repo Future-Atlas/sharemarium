@@ -495,11 +495,11 @@ class _PostCardState extends State<PostCard> {
                                   ),
                               ],
                             ),
-                          if (onReport != null)
+                          if (onReply != null)
                             TextButton.icon(
-                              onPressed: onReport,
-                              icon: const Icon(Icons.flag_outlined, size: 16),
-                              label: const Text('報告'),
+                              onPressed: () => onReply!(null),
+                              icon: const Icon(Icons.reply_outlined, size: 16),
+                              label: Text('返信 ${replies.length}'),
                               style: TextButton.styleFrom(
                                 foregroundColor: tertiaryTextColor,
                                 padding: const EdgeInsets.symmetric(
@@ -508,11 +508,11 @@ class _PostCardState extends State<PostCard> {
                                 minimumSize: const Size(0, 34),
                               ),
                             ),
-                          if (onReply != null)
+                          if (onReport != null)
                             TextButton.icon(
-                              onPressed: () => onReply!(null),
-                              icon: const Icon(Icons.reply_outlined, size: 16),
-                              label: Text('返信 ${replies.length}'),
+                              onPressed: onReport,
+                              icon: const Icon(Icons.flag_outlined, size: 16),
+                              label: const Text('報告'),
                               style: TextButton.styleFrom(
                                 foregroundColor: tertiaryTextColor,
                                 padding: const EdgeInsets.symmetric(
@@ -797,6 +797,41 @@ class _PostCardState extends State<PostCard> {
                 ],
               ),
             ),
+            if (onReply != null || onReport != null) ...[
+              const SizedBox(height: 2),
+              Align(
+                alignment: Alignment.centerRight,
+                child: Wrap(
+                  spacing: 0,
+                  children: [
+                    if (onReply != null)
+                      TextButton.icon(
+                        onPressed: () => onReply!(null),
+                        icon: const Icon(Icons.reply_outlined, size: 16),
+                        label: Text('返信 ${replies.length}'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: tertiaryTextColor,
+                          padding: const EdgeInsets.symmetric(horizontal: 5),
+                          minimumSize: const Size(0, 30),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                      ),
+                    if (onReport != null)
+                      TextButton.icon(
+                        onPressed: onReport,
+                        icon: const Icon(Icons.flag_outlined, size: 16),
+                        label: const Text('報告'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: tertiaryTextColor,
+                          padding: const EdgeInsets.symmetric(horizontal: 5),
+                          minimumSize: const Size(0, 30),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 8),
             Align(
               alignment: Alignment.centerLeft,
@@ -833,34 +868,6 @@ class _PostCardState extends State<PostCard> {
                             onEdit != null ||
                             onDelete != null)
                           _buildPostMenu(tertiaryTextColor),
-                        if (onReport != null)
-                          TextButton.icon(
-                            onPressed: onReport,
-                            icon: const Icon(Icons.flag_outlined, size: 16),
-                            label: const Text('報告'),
-                            style: TextButton.styleFrom(
-                              foregroundColor: tertiaryTextColor,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 5,
-                              ),
-                              minimumSize: const Size(0, 34),
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            ),
-                          ),
-                        if (onReply != null)
-                          TextButton.icon(
-                            onPressed: () => onReply!(null),
-                            icon: const Icon(Icons.reply_outlined, size: 16),
-                            label: Text('返信 ${replies.length}'),
-                            style: TextButton.styleFrom(
-                              foregroundColor: tertiaryTextColor,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 5,
-                              ),
-                              minimumSize: const Size(0, 34),
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            ),
-                          ),
                       ],
                     ),
                   ],

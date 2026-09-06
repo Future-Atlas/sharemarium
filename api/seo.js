@@ -535,8 +535,6 @@ module.exports = async (req, res) => {
     res.setHeader("X-Robots-Tag", "noindex, nofollow");
   }
 
-  console.log(`SEO Crawler requested path: ${decodedPath}`);
-
   const renderPage = ({
     title,
     description,
@@ -780,7 +778,6 @@ module.exports = async (req, res) => {
     } catch (err) {
       diagnostics.supabaseProfileError =
         err instanceof Error ? err.message.slice(0, 80) : "unknown";
-      console.error("Error fetching profile SEO data:", err);
     }
 
     const postsHtml = posts
@@ -1215,7 +1212,6 @@ module.exports = async (req, res) => {
   } catch (err) {
     diagnostics.supabaseIndexError =
       err instanceof Error ? err.message.slice(0, 80) : "unknown";
-    console.error("Error fetching index SEO data:", err);
   }
 
   const timelineHtml = recentPosts

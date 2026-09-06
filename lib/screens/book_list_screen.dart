@@ -15,16 +15,10 @@ import 'user_profile_screen.dart';
 import 'post_engagement_users_screen.dart';
 
 class BookListScreen extends StatefulWidget {
-  const BookListScreen({
-    super.key,
-    this.onOpenUserProfile,
-    this.initialGenre,
-    this.initialBookSlug,
-  });
+  const BookListScreen({super.key, this.onOpenUserProfile, this.initialGenre});
 
   final ValueChanged<String>? onOpenUserProfile;
   final String? initialGenre;
-  final String? initialBookSlug;
 
   @override
   State<BookListScreen> createState() => _BookListScreenState();
@@ -34,57 +28,12 @@ class _BookListScreenState extends State<BookListScreen> {
   late final BookListController _controller;
   final ScrollController _timelineScrollController = ScrollController();
   final Set<String> _pendingReactionPostIds = <String>{};
-  bool _openedInitialBook = false;
 
   @override
   void initState() {
     super.initState();
     _controller = BookListController();
     _controller.initialize(context);
-  }
-
-  String? _titleForBookSlug(String slug) {
-    const titles = {
-      'konbini-ningen': 'コンビニ人間',
-      'fune-wo-amu': '舟を編む',
-      'midnight-library': 'The Midnight Library',
-      'atomic-habits': 'Atomic Habits',
-      'baton-wa-watasareta': 'そして、バトンは渡された',
-      'nanji-hoshi-no-gotoku': '汝、星のごとく',
-    };
-    return titles[slug];
-  }
-
-  void _openInitialBookIfReady() {
-    final slug = widget.initialBookSlug;
-    if (_openedInitialBook || slug == null || slug.isEmpty) return;
-    final title = _titleForBookSlug(slug);
-    if (title == null) return;
-    final loadedBooks = <Book>[
-      ..._controller.recommendedBooks,
-      ..._controller.westernBooks,
-      ..._controller.popularBooks,
-    ];
-    Book? book;
-    for (final candidate in loadedBooks) {
-      if (candidate.title.trim().toLowerCase() == title.toLowerCase()) {
-        book = candidate;
-        break;
-      }
-    }
-    if (book == null) return;
-    _openedInitialBook = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _showBookDetailDialog(book!);
-    });
-  }
-
-  @override
-  void didUpdateWidget(covariant BookListScreen oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.initialBookSlug != widget.initialBookSlug) {
-      _openedInitialBook = false;
-    }
   }
 
   @override
@@ -191,11 +140,11 @@ class _BookListScreenState extends State<BookListScreen> {
     );
     _pendingReactionPostIds.remove('want:${post.id}');
     if (!mounted) return;
-    if (result == WantToReadToggleResult.failed && previous != null) {
+    if (result.shouldRestoreOptimisticState && previous != null) {
       _controller.restoreTimelinePost(previous);
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('「読みたい！」を更新できませんでした。')));
+      ).showSnackBar(SnackBar(content: Text(result.message)));
     }
   }
 
@@ -438,9 +387,9 @@ class _BookListScreenState extends State<BookListScreen> {
                                             ),
                                           ),
                                         ),
-                                        child: const Text(
-                                          '読了',
-                                          style: TextStyle(
+                                        child: Text(
+                                          isRead ? '読了済み' : '読了',
+                                          style: const TextStyle(
                                             fontSize: 52 / 2,
                                             fontWeight: FontWeight.bold,
                                           ),
@@ -474,9 +423,8 @@ class _BookListScreenState extends State<BookListScreen> {
                                                         );
                                                     if (!mounted) return;
                                                     if (context.mounted &&
-                                                        result !=
-                                                            WantToReadToggleResult
-                                                                .failed) {
+                                                        !result
+                                                            .shouldRestoreOptimisticState) {
                                                       Navigator.of(
                                                         context,
                                                       ).pop();
@@ -486,15 +434,7 @@ class _BookListScreenState extends State<BookListScreen> {
                                                     ).showSnackBar(
                                                       SnackBar(
                                                         content: Text(
-                                                          result ==
-                                                                  WantToReadToggleResult
-                                                                      .added
-                                                              ? '「読みたい！」に追加しました。'
-                                                              : result ==
-                                                                    WantToReadToggleResult
-                                                                        .removed
-                                                              ? '「読みたい！」から解除しました。'
-                                                              : '「読みたい！」を更新できませんでした。',
+                                                          result.message,
                                                         ),
                                                       ),
                                                     );
@@ -739,7 +679,6 @@ class _BookListScreenState extends State<BookListScreen> {
     return AnimatedBuilder(
       animation: _controller,
       builder: (context, child) {
-        _openInitialBookIfReady();
         return Container(
           width: double.infinity,
           color: Theme.of(context).scaffoldBackgroundColor,
@@ -1575,12 +1514,15 @@ class _BookPostsPanelState extends State<_BookPostsPanel> {
       sourcePostId: post.id,
     );
     if (!mounted) return;
-    if (result == WantToReadToggleResult.failed) {
+    if (result.shouldRestoreOptimisticState) {
       setState(() {
         final current = List<Post>.from(_posts);
         current[index] = post;
         _posts = current;
       });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(result.message)));
     }
   }
 
@@ -1648,7 +1590,7 @@ class _BookPostsPanelState extends State<_BookPostsPanel> {
                 : _posts.isEmpty
                 ? Center(
                     child: Text(
-                      'この本に関する他のユーザーの投稿はまだありません。',
+                      'この本に関する投稿はまだありません。',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         color: isDarkMode ? Colors.white70 : Colors.black54,

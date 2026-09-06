@@ -278,8 +278,7 @@ class BookListController extends ChangeNotifier {
       _recommendedPageCache[recommendedPage] = recommendedBooks;
       _recommendedReachedEnd = recommendedBooks.isEmpty;
       hasMoreRecommended = !_recommendedReachedEnd;
-    } catch (e) {
-      print('おすすめ本の取得でエラーが発生しました: $e');
+    } catch (_) {
       recommendedBooks = [];
       hasMoreRecommended = false;
     } finally {
@@ -295,8 +294,7 @@ class BookListController extends ChangeNotifier {
       _westernPageCache[westernPage] = westernBooks;
       _westernReachedEnd = westernBooks.isEmpty;
       hasMoreWestern = !_westernReachedEnd;
-    } catch (e) {
-      print('洋書の取得でエラーが発生しました: $e');
+    } catch (_) {
       westernBooks = [];
       hasMoreWestern = false;
     } finally {
@@ -312,8 +310,7 @@ class BookListController extends ChangeNotifier {
       _popularPageCache[popularPage] = popularBooks;
       _popularReachedEnd = popularBooks.isEmpty;
       hasMorePopular = !_popularReachedEnd;
-    } catch (e) {
-      print('人気作品の取得でエラーが発生しました: $e');
+    } catch (_) {
       popularBooks = [];
       hasMorePopular = false;
     } finally {
@@ -326,8 +323,7 @@ class BookListController extends ChangeNotifier {
       timelineReplies = await SupabaseService().fetchRepliesForPosts(
         timelinePosts.map((post) => post.id).toList(growable: false),
       );
-    } catch (e) {
-      print('Supabaseの接続エラー: $e');
+    } catch (_) {
       timelinePosts = [];
       timelineReplies = {};
     } finally {
@@ -357,8 +353,6 @@ class BookListController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      print('📡 おすすめ本の次のページを取得中... (Page: $nextPage)');
-
       final newBooks = await _repository.fetchBooksByGenre(
         '話題の本',
         page: nextPage,
@@ -374,8 +368,6 @@ class BookListController extends ChangeNotifier {
         _recommendedReachedEnd = false;
         hasMoreRecommended = !_recommendedReachedEnd;
       }
-    } catch (e) {
-      print('おすすめ本の追加取得エラー: $e');
     } finally {
       isLoadingMoreRecommended = false;
       notifyListeners();
@@ -410,8 +402,6 @@ class BookListController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      print('📡 洋書の次のページを取得中... (Page: $nextPage)');
-
       final newBooks = await _repository.fetchBooksByGenre(
         'English',
         page: nextPage,
@@ -427,8 +417,6 @@ class BookListController extends ChangeNotifier {
         _westernReachedEnd = false;
         hasMoreWestern = !_westernReachedEnd;
       }
-    } catch (e) {
-      print('洋書の追加取得エラー: $e');
     } finally {
       isLoadingMoreWestern = false;
       notifyListeners();
@@ -463,8 +451,6 @@ class BookListController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      print('📡 人気作品の次のページを取得中... (Page: $nextPage)');
-
       final newBooks = await _repository.fetchBooksByGenre(
         'ベストセラー',
         page: nextPage,
@@ -480,8 +466,6 @@ class BookListController extends ChangeNotifier {
         _popularReachedEnd = false;
         hasMorePopular = !_popularReachedEnd;
       }
-    } catch (e) {
-      print('人気作品の追加取得エラー: $e');
     } finally {
       isLoadingMorePopular = false;
       notifyListeners();

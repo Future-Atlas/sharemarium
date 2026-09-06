@@ -16,6 +16,12 @@ import '../models/profile_page_color.dart';
 import 'content_safety_service.dart';
 import 'input_security_service.dart';
 import 'timeline_ranking_service.dart';
+import '../utils/dev_logger.dart';
+
+// Kept for local troubleshooting. `debugLog` is silent outside debug builds.
+void debugPrint(String? message, {int? wrapWidth}) {
+  debugLog(message, wrapWidth: wrapWidth);
+}
 
 enum FavoriteToggleResult {
   added,
@@ -26,7 +32,26 @@ enum FavoriteToggleResult {
   failed,
 }
 
-enum WantToReadToggleResult { added, removed, failed }
+enum WantToReadToggleResult { added, removed, alreadyRead, failed }
+
+extension WantToReadToggleResultLabel on WantToReadToggleResult {
+  bool get shouldRestoreOptimisticState =>
+      this == WantToReadToggleResult.alreadyRead ||
+      this == WantToReadToggleResult.failed;
+
+  String get message {
+    switch (this) {
+      case WantToReadToggleResult.added:
+        return '「読みたい！」に追加しました。';
+      case WantToReadToggleResult.removed:
+        return '「読みたい！」から解除しました。';
+      case WantToReadToggleResult.alreadyRead:
+        return 'この本はすでに読了済みです。';
+      case WantToReadToggleResult.failed:
+        return '「読みたい！」を更新できませんでした。';
+    }
+  }
+}
 
 class SupabaseService extends ChangeNotifier {
   static const int standardFavoriteLimit = 3;
@@ -1578,7 +1603,7 @@ class SupabaseService extends ChangeNotifier {
 
   Future<List<Post>> fetchPostsForBook(
     String bookId, {
-    bool excludeCurrentUser = true,
+    bool excludeCurrentUser = false,
   }) async {
     final normalizedBookId = bookId.trim();
     if (!_isInitialized || _client == null || normalizedBookId.isEmpty) {
@@ -1590,12 +1615,26 @@ class SupabaseService extends ChangeNotifier {
       final enriched = await _enrichPostsWithBookMetadata(parsed);
       final visible = await _filterPostsForCurrentViewer(enriched);
       final viewerId = activeProfileId;
-      final otherUsersPosts = excludeCurrentUser && viewerId.isNotEmpty
+      final otherUsersPosts = viewerId.isNotEmpty
           ? visible
                 .where((post) => post.profileId != viewerId)
                 .toList(growable: false)
-          : visible;
-      return _arrangeTimelinePosts(otherUsersPosts);
+          : <Post>[];
+      if (excludeCurrentUser || viewerId.isEmpty) {
+        return _arrangeTimelinePosts(
+          excludeCurrentUser ? otherUsersPosts : visible,
+        );
+      }
+
+      final ownPosts =
+          visible
+              .where((post) => post.profileId == viewerId)
+              .toList(growable: false)
+            ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      final rankedOtherUsersPosts = await _arrangeTimelinePosts(
+        otherUsersPosts,
+      );
+      return [...ownPosts, ...rankedOtherUsersPosts];
     }
 
     try {
@@ -2249,9 +2288,16 @@ class SupabaseService extends ChangeNotifier {
         },
       );
       notifyListeners();
-      return result?.toString() == 'removed'
-          ? WantToReadToggleResult.removed
-          : WantToReadToggleResult.added;
+      switch (result?.toString()) {
+        case 'added':
+          return WantToReadToggleResult.added;
+        case 'removed':
+          return WantToReadToggleResult.removed;
+        case 'already_read':
+          return WantToReadToggleResult.alreadyRead;
+        default:
+          return WantToReadToggleResult.failed;
+      }
     } catch (e) {
       debugPrint('Error toggling want-to-read: $e');
       return WantToReadToggleResult.failed;

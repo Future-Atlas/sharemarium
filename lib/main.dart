@@ -33,10 +33,6 @@ void main() async {
 
   await themeService.initialize();
 
-  debugPrint(
-    'Starting Sharemarium with APP_ENV=${AppEnvironmentConfig.environmentName}',
-  );
-
   // Initialize Supabase service
   await supabaseService.initialize(
     url: AppEnvironmentConfig.supabaseUrl,
@@ -204,12 +200,6 @@ class _MainNavigationShellState extends State<MainNavigationShell>
     if (path == '/genre/western') return 'western';
     if (path == '/genre/popular') return 'popular';
     return null;
-  }
-
-  String? _bookSlugFromPath(String path) {
-    if (!path.startsWith('/book/')) return null;
-    final slug = path.substring('/book/'.length).split('/').first;
-    return slug.isEmpty ? null : Uri.decodeComponent(slug);
   }
 
   bool _isOpeningLogin = false;
@@ -798,9 +788,6 @@ class _MainNavigationShellState extends State<MainNavigationShell>
                             key: const ValueKey('BookListScreen'),
                             onOpenUserProfile: _openUserProfile,
                             initialGenre: _genreFromPath(
-                              _currentAppPathFromUri(Uri.base),
-                            ),
-                            initialBookSlug: _bookSlugFromPath(
                               _currentAppPathFromUri(Uri.base),
                             ),
                           )
