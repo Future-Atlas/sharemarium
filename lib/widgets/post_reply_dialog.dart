@@ -21,20 +21,35 @@ class _ReplyLengthFormatter extends TextInputFormatter {
   }
 }
 
-Future<void> showPostReplyLockedDialog({required BuildContext context}) {
+Future<void> showPostReplyLockedDialog({
+  required BuildContext context,
+  bool? isAuthenticated,
+}) {
+  final signedIn = isAuthenticated ?? SupabaseService().isAuthenticated;
   return showDialog<void>(
     context: context,
     builder: (dialogContext) => AlertDialog(
-      content: const Column(
+      content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.lock_rounded, size: 64),
-          SizedBox(height: 16),
-          Text(
-            '返信は限定コンテンツです',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+          Icon(
+            signedIn ? Icons.lock_rounded : Icons.login_rounded,
+            size: 64,
           ),
+          const SizedBox(height: 16),
+          Text(
+            signedIn ? '返信は限定コンテンツです' : '返信するにはサインインしてください',
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+          ),
+          if (!signedIn) ...[
+            const SizedBox(height: 10),
+            const Text(
+              '公開投稿と返信はサインインせず閲覧できます。返信を投稿する場合のみサインインが必要です。',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13),
+            ),
+          ],
         ],
       ),
       actions: [
@@ -42,6 +57,15 @@ Future<void> showPostReplyLockedDialog({required BuildContext context}) {
           onPressed: () => Navigator.of(dialogContext).pop(),
           child: const Text('閉じる'),
         ),
+        if (!signedIn)
+          FilledButton(
+            onPressed: () {
+              final navigator = Navigator.of(context);
+              Navigator.of(dialogContext).pop();
+              navigator.pushNamed('/login');
+            },
+            child: const Text('サインイン'),
+          ),
       ],
     ),
   );
