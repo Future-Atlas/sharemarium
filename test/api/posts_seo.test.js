@@ -44,9 +44,11 @@ test("posts index renders public reviews with reply counts and detail links", as
   };
   const previousFetch = global.fetch;
   setSupabaseEnv();
+  const requestedUrls = [];
 
   global.fetch = async (url) => {
     const requested = String(url);
+    requestedUrls.push(requested);
     if (requested.includes("/rest/v1/posts")) {
       return {
         ok: true,
@@ -97,6 +99,13 @@ test("posts index renders public reviews with reply counts and detail links", as
   await handler({}, res);
 
   assert.equal(res.statusCode, 200);
+  const postsRequest = requestedUrls.find((url) => url.includes("/rest/v1/posts"));
+  assert.ok(postsRequest);
+  const postsSelect = new URL(postsRequest).searchParams.get("select");
+  assert.match(
+    postsSelect,
+    /profiles:profiles!posts_profile_id_fkey\(username,user_id\)/,
+  );
   assert.match(res.body, /<h1>投稿一覧<\/h1>/);
   assert.match(res.body, new RegExp(`href="/posts/${POST_A}"`));
   assert.match(res.body, new RegExp(`href="/posts/${POST_B}"`));
@@ -105,6 +114,35 @@ test("posts index renders public reviews with reply counts and detail links", as
   assert.match(res.body, /ネタバレを含む投稿です/);
   assert.match(res.body, /<meta name="robots" content="index,follow">/);
   assert.equal(res.headers["X-Robots-Tag"], undefined);
+  assert.equal(res.headers["X-Posts-Diagnostics"], "ok");
+
+  global.fetch = previousFetch;
+  restoreEnv(previousEnv);
+  delete require.cache[require.resolve("../../api/posts-seo")];
+});
+
+test("posts index reports a safe diagnostic code on Supabase failure", async () => {
+  const previousEnv = {
+    SUPABASE_URL: process.env.SUPABASE_URL,
+    SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY,
+  };
+  const previousFetch = global.fetch;
+  setSupabaseEnv();
+
+  global.fetch = async () => ({
+    ok: false,
+    status: 400,
+    json: async () => ({}),
+  });
+
+  delete require.cache[require.resolve("../../api/posts-seo")];
+  const handler = require("../../api/posts-seo");
+  const res = responseRecorder();
+  await handler({}, res);
+
+  assert.equal(res.statusCode, 503);
+  assert.equal(res.headers["X-Posts-Diagnostics"], "posts_400");
+  assert.equal(res.headers["Retry-After"], "60");
 
   global.fetch = previousFetch;
   restoreEnv(previousEnv);
@@ -136,6 +174,7 @@ test("empty posts index remains accessible but is noindex", async () => {
   assert.match(res.body, /現在、表示できる投稿がありません/);
   assert.match(res.body, /<meta name="robots" content="noindex,follow">/);
   assert.equal(res.headers["X-Robots-Tag"], "noindex, follow");
+  assert.equal(res.headers["X-Posts-Diagnostics"], "ok");
 
   global.fetch = previousFetch;
   restoreEnv(previousEnv);
