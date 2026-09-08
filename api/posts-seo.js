@@ -35,16 +35,15 @@ function formatDate(value) {
   }).format(date);
 }
 
-function postProfile(post) {
-  if (Array.isArray(post?.profiles)) return post.profiles[0] || null;
-  return post?.profiles || null;
-}
-
 function supabaseHeaders() {
   return {
     apikey: SUPABASE_ANON_KEY,
     Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
   };
+}
+
+function uniqueIds(values) {
+  return [...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))];
 }
 
 async function fetchPosts() {
@@ -55,7 +54,7 @@ async function fetchPosts() {
   const url = new URL("/rest/v1/posts", SUPABASE_URL);
   url.searchParams.set(
     "select",
-    "id,profile_id,book_id,book_title,rating,comment,created_at,is_spoiler,profiles:profiles!posts_profile_id_fkey(username,user_id)",
+    "id,profile_id,book_id,book_title,rating,comment,created_at,is_spoiler",
   );
   url.searchParams.set("order", "created_at.desc");
   url.searchParams.set("limit", String(POSTS_LIMIT));
@@ -65,6 +64,28 @@ async function fetchPosts() {
 
   const body = await response.json();
   return Array.isArray(body) ? body : [];
+}
+
+async function fetchProfiles(profileIds) {
+  const ids = uniqueIds(profileIds);
+  if (ids.length === 0) return new Map();
+
+  const url = new URL("/rest/v1/profiles", SUPABASE_URL);
+  url.searchParams.set("select", "id,username,user_id");
+  url.searchParams.set("id", `in.(${ids.join(",")})`);
+  url.searchParams.set("limit", String(ids.length));
+
+  const response = await fetch(url, { headers: supabaseHeaders() });
+  if (!response.ok) throw new Error(`profiles_http_${response.status}`);
+
+  const body = await response.json();
+  const profiles = new Map();
+  if (!Array.isArray(body)) return profiles;
+  for (const profile of body) {
+    const id = String(profile?.id || "");
+    if (id) profiles.set(id, profile);
+  }
+  return profiles;
 }
 
 async function fetchReplyCounts(postIds) {
@@ -91,7 +112,7 @@ async function fetchReplyCounts(postIds) {
 
 function diagnosticCode(message) {
   if (message === "supabase_env_missing") return "env_missing";
-  const known = /^(posts|replies)_http_(\d{3})$/.exec(message);
+  const known = /^(posts|profiles|replies)_http_(\d{3})$/.exec(message);
   if (known) return `${known[1]}_${known[2]}`;
   return "unknown";
 }
@@ -120,12 +141,8 @@ function renderUnavailable(res, statusCode, message) {
 
 module.exports = async (_req, res) => {
   let posts;
-  let replyCounts = new Map();
   try {
     posts = await fetchPosts();
-    replyCounts = await fetchReplyCounts(
-      posts.map((post) => String(post.id || "")).filter(Boolean),
-    );
   } catch (err) {
     const message = err instanceof Error ? err.message : "unknown";
     const retryAfter = message === "supabase_env_missing" ? "300" : "60";
@@ -138,10 +155,31 @@ module.exports = async (_req, res) => {
     );
   }
 
+  let profiles = new Map();
+  let profilesDiagnostic = "ok";
+  try {
+    profiles = await fetchProfiles(posts.map((post) => post.profile_id));
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "unknown";
+    profilesDiagnostic = diagnosticCode(message);
+  }
+
+  let replyCounts = new Map();
+  let repliesDiagnostic = "ok";
+  try {
+    replyCounts = await fetchReplyCounts(
+      posts.map((post) => String(post.id || "")).filter(Boolean),
+    );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "unknown";
+    repliesDiagnostic = diagnosticCode(message);
+  }
+
   const canonical = `${SITE_URL}/posts`;
   const hasPosts = posts.length > 0;
   const listItems = posts.map((post, index) => {
-    const profile = postProfile(post);
+    const profileId = String(post.profile_id || "");
+    const profile = profiles.get(profileId) || null;
     const username = normalizeText(profile?.username) || "Sharemariumユーザー";
     const bookTitle =
       normalizeText(post.book_title) || normalizeText(post.book_id) || "本";
@@ -152,13 +190,17 @@ module.exports = async (_req, res) => {
     const rating = Number.isFinite(ratingRaw)
       ? Math.min(5, Math.max(0, ratingRaw))
       : null;
-    const replyCount = replyCounts.get(postId) || 0;
+    const replyCount = replyCounts.has(postId) ? replyCounts.get(postId) : null;
+    const replyLabel =
+      repliesDiagnostic === "ok"
+        ? `${replyCount || 0}件の返信`
+        : "返信数を取得できません";
     const body = post.is_spoiler === true
       ? "ネタバレを含む投稿です。詳細画面で内容を確認できます。"
       : excerpt(post.comment) || "レビュー本文はありません。";
-    const profileId = String(profile?.user_id || post.profile_id || "");
-    const profileUrl = profileId
-      ? `/users/${encodeURIComponent(profileId)}`
+    const publicProfileId = String(profile?.user_id || profileId || "");
+    const profileUrl = publicProfileId
+      ? `/users/${encodeURIComponent(publicProfileId)}`
       : "/";
 
     return {
@@ -172,7 +214,7 @@ module.exports = async (_req, res) => {
           <div class="meta">
             <span>投稿者: ${escapeHtml(username)}</span>
             ${date ? `<time datetime="${escapeHtml(String(post.created_at || ""))}">${escapeHtml(date)}</time>` : ""}
-            <span class="reply-count">${replyCount}件の返信</span>
+            <span class="reply-count">${escapeHtml(replyLabel)}</span>
           </div>
         </a>
         <a class="profile-link" href="${escapeHtml(profileUrl)}">${escapeHtml(username)}さんのプロフィール</a>
@@ -198,10 +240,15 @@ module.exports = async (_req, res) => {
     },
   };
 
+  const dependencyDiagnostic =
+    profilesDiagnostic === "ok" && repliesDiagnostic === "ok"
+      ? "ok"
+      : `posts=ok;profiles=${profilesDiagnostic};replies=${repliesDiagnostic}`;
+
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   if (!hasPosts) res.setHeader("X-Robots-Tag", "noindex, follow");
   res.setHeader("Cache-Control", "s-maxage=120, stale-while-revalidate=600");
-  res.setHeader("X-Posts-Diagnostics", "ok");
+  res.setHeader("X-Posts-Diagnostics", dependencyDiagnostic);
 
   return res.status(200).send(`<!doctype html>
 <html lang="ja">
