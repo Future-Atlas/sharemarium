@@ -55,7 +55,7 @@ async function fetchPosts() {
   const url = new URL("/rest/v1/posts", SUPABASE_URL);
   url.searchParams.set(
     "select",
-    "id,profile_id,book_id,book_title,rating,comment,created_at,is_spoiler,profiles(username,user_id)",
+    "id,profile_id,book_id,book_title,rating,comment,created_at,is_spoiler,profiles:profiles!posts_profile_id_fkey(username,user_id)",
   );
   url.searchParams.set("order", "created_at.desc");
   url.searchParams.set("limit", String(POSTS_LIMIT));
@@ -87,6 +87,13 @@ async function fetchReplyCounts(postIds) {
     counts.set(postId, (counts.get(postId) || 0) + 1);
   }
   return counts;
+}
+
+function diagnosticCode(message) {
+  if (message === "supabase_env_missing") return "env_missing";
+  const known = /^(posts|replies)_http_(\d{3})$/.exec(message);
+  if (known) return `${known[1]}_${known[2]}`;
+  return "unknown";
 }
 
 function renderUnavailable(res, statusCode, message) {
@@ -123,6 +130,7 @@ module.exports = async (_req, res) => {
     const message = err instanceof Error ? err.message : "unknown";
     const retryAfter = message === "supabase_env_missing" ? "300" : "60";
     res.setHeader("Retry-After", retryAfter);
+    res.setHeader("X-Posts-Diagnostics", diagnosticCode(message));
     return renderUnavailable(
       res,
       503,
@@ -193,6 +201,7 @@ module.exports = async (_req, res) => {
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   if (!hasPosts) res.setHeader("X-Robots-Tag", "noindex, follow");
   res.setHeader("Cache-Control", "s-maxage=120, stale-while-revalidate=600");
+  res.setHeader("X-Posts-Diagnostics", "ok");
 
   return res.status(200).send(`<!doctype html>
 <html lang="ja">

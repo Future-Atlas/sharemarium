@@ -11,7 +11,7 @@ function escapeHtml(value) {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/\"/g, "&quot;")
+    .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 }
 
@@ -84,7 +84,7 @@ async function fetchPost(postId) {
   const url = new URL("/rest/v1/posts", SUPABASE_URL);
   url.searchParams.set(
     "select",
-    "id,profile_id,book_id,book_title,rating,comment,created_at,is_spoiler,profiles(username,user_id)",
+    "id,profile_id,book_id,book_title,rating,comment,created_at,is_spoiler,profiles:profiles!posts_profile_id_fkey(username,user_id)",
   );
   url.searchParams.set("id", `eq.${postId}`);
   url.searchParams.set("limit", "1");
@@ -104,7 +104,7 @@ async function fetchReplies(postId) {
   const url = new URL("/rest/v1/post_replies", SUPABASE_URL);
   url.searchParams.set(
     "select",
-    "id,post_id,profile_id,parent_reply_id,message,has_spoiler,created_at,profiles(username,user_id)",
+    "id,post_id,profile_id,parent_reply_id,message,has_spoiler,created_at,profiles:profiles!post_replies_profile_id_fkey(username,user_id)",
   );
   url.searchParams.set("post_id", `eq.${postId}`);
   url.searchParams.set("order", "created_at.asc");
@@ -117,6 +117,13 @@ async function fetchReplies(postId) {
 
   const body = await response.json();
   return Array.isArray(body) ? body : [];
+}
+
+function diagnosticCode(message) {
+  if (message === "supabase_env_missing") return "env_missing";
+  const known = /^(post|replies)_http_(\d{3})$/.exec(message);
+  if (known) return `${known[1]}_${known[2]}`;
+  return "unknown";
 }
 
 function renderReplies(replies) {
@@ -187,6 +194,7 @@ module.exports = async (req, res) => {
     post = await fetchPost(postId);
   } catch (err) {
     const message = err instanceof Error ? err.message : "unknown";
+    res.setHeader("X-Post-Diagnostics", diagnosticCode(message));
     if (message === "supabase_env_missing") {
       res.setHeader("Retry-After", "300");
       return renderErrorPage({
@@ -220,7 +228,8 @@ module.exports = async (req, res) => {
     res.setHeader("X-Reply-Diagnostics", "replies=ok");
   } catch (err) {
     replies = [];
-    res.setHeader("X-Reply-Diagnostics", "replies=error");
+    const message = err instanceof Error ? err.message : "unknown";
+    res.setHeader("X-Reply-Diagnostics", diagnosticCode(message));
   }
 
   const profile = postProfile(post);
@@ -288,6 +297,7 @@ module.exports = async (req, res) => {
     res.setHeader("X-Robots-Tag", "noindex, follow");
   }
   res.setHeader("Cache-Control", "s-maxage=300, stale-while-revalidate=3600");
+  res.setHeader("X-Post-Diagnostics", "ok");
 
   return res.status(200).send(`<!doctype html>
 <html lang="ja">
