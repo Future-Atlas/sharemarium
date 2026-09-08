@@ -75,9 +75,13 @@ test("review permalink renders a substantial public review as indexable HTML", a
   setSupabaseEnv();
   const longComment =
     "物語の前半では主人公の選択に共感できない場面もありましたが、後半でその理由が丁寧に回収されていく構成が印象的でした。登場人物同士の距離感の変化も自然で、読み終えた後にもう一度序盤を振り返りたくなる作品です。";
-  let requestedUrl = "";
+  const requestedUrls = [];
   global.fetch = async (url) => {
-    requestedUrl = String(url);
+    const requested = String(url);
+    requestedUrls.push(requested);
+    if (requested.includes("/rest/v1/post_replies")) {
+      return { ok: true, status: 200, json: async () => [] };
+    }
     return {
       ok: true,
       status: 200,
@@ -103,8 +107,9 @@ test("review permalink renders a substantial public review as indexable HTML", a
   await handler({ query: { post_id: POST_ID } }, res);
 
   assert.equal(res.statusCode, 200);
-  assert.match(requestedUrl, /rest\/v1\/posts/);
-  assert.match(requestedUrl, new RegExp(`id=eq\\.${POST_ID}`));
+  const postRequest = requestedUrls.find((url) => url.includes("/rest/v1/posts"));
+  assert.ok(postRequest);
+  assert.match(postRequest, new RegExp(`id=eq\\.${POST_ID}`));
   assert.match(res.body, /<meta name="robots" content="index,follow">/);
   assert.match(
     res.body,
@@ -138,23 +143,29 @@ test("short and spoiler reviews remain readable but are noindex", async () => {
   ];
 
   for (const current of cases) {
-    global.fetch = async () => ({
-      ok: true,
-      status: 200,
-      json: async () => [
-        {
-          id: current.id,
-          profile_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-          book_id: "9784000000000",
-          book_title: "テスト書籍",
-          rating: 5,
-          comment: current.comment,
-          created_at: "2026-09-08T01:23:45Z",
-          is_spoiler: current.is_spoiler,
-          profiles: { username: "読書好き", user_id: "reader_1" },
-        },
-      ],
-    });
+    global.fetch = async (url) => {
+      const requested = String(url);
+      if (requested.includes("/rest/v1/post_replies")) {
+        return { ok: true, status: 200, json: async () => [] };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => [
+          {
+            id: current.id,
+            profile_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            book_id: "9784000000000",
+            book_title: "テスト書籍",
+            rating: 5,
+            comment: current.comment,
+            created_at: "2026-09-08T01:23:45Z",
+            is_spoiler: current.is_spoiler,
+            profiles: { username: "読書好き", user_id: "reader_1" },
+          },
+        ],
+      };
+    };
     delete require.cache[require.resolve("../../api/post-seo")];
     const handler = require("../../api/post-seo");
     const res = responseRecorder();
