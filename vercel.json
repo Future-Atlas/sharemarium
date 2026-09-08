@@ -74,10 +74,24 @@
     },
     {
       "src": "/posts$",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": ".*([Gg]ooglebot|Mediapartners-Google|Google-Display-Ads-Bot|[Bb]ingbot|[Yy]andex[Bb]ot|[Dd]uck[Dd]uck[Bb]ot|[Bb]aiduspider|[Tt]witterbot|[Ff]acebookexternalhit|[Ff]acebot|[Ll]inkedinbot|[Ee]mbedly|[Qq]uora|[Ss]lackbot).*"
+        }
+      ],
       "dest": "/api/posts-seo"
     },
     {
       "src": "/posts/([^/]+)",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": ".*([Gg]ooglebot|Mediapartners-Google|Google-Display-Ads-Bot|[Bb]ingbot|[Yy]andex[Bb]ot|[Dd]uck[Dd]uck[Bb]ot|[Bb]aiduspider|[Tt]witterbot|[Ff]acebookexternalhit|[Ff]acebot|[Ll]inkedinbot|[Ee]mbedly|[Qq]uora|[Ss]lackbot).*"
+        }
+      ],
       "dest": "/api/post-seo?post_id=$1"
     },
     {
