@@ -108,8 +108,20 @@ test("review permalink renders a substantial public review as indexable HTML", a
 
   assert.equal(res.statusCode, 200);
   const postRequest = requestedUrls.find((url) => url.includes("/rest/v1/posts"));
+  const replyRequest = requestedUrls.find((url) =>
+    url.includes("/rest/v1/post_replies"),
+  );
   assert.ok(postRequest);
+  assert.ok(replyRequest);
   assert.match(postRequest, new RegExp(`id=eq\\.${POST_ID}`));
+  assert.match(
+    new URL(postRequest).searchParams.get("select"),
+    /profiles:profiles!posts_profile_id_fkey\(username,user_id\)/,
+  );
+  assert.match(
+    new URL(replyRequest).searchParams.get("select"),
+    /profiles:profiles!post_replies_profile_id_fkey\(username,user_id\)/,
+  );
   assert.match(res.body, /<meta name="robots" content="index,follow">/);
   assert.match(
     res.body,
@@ -119,6 +131,35 @@ test("review permalink renders a substantial public review as indexable HTML", a
   assert.match(res.body, /読書好き/);
   assert.match(res.body, /Review/);
   assert.equal(res.headers["X-Robots-Tag"], undefined);
+  assert.equal(res.headers["X-Post-Diagnostics"], "ok");
+  assert.equal(res.headers["X-Reply-Diagnostics"], "replies=ok");
+
+  global.fetch = previousFetch;
+  restoreEnv(previousEnv);
+  delete require.cache[require.resolve("../../api/post-seo")];
+});
+
+test("review permalink reports a safe diagnostic code on Supabase failure", async () => {
+  const previousEnv = {
+    SUPABASE_URL: process.env.SUPABASE_URL,
+    SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY,
+  };
+  const previousFetch = global.fetch;
+  setSupabaseEnv();
+  global.fetch = async () => ({
+    ok: false,
+    status: 400,
+    json: async () => ({}),
+  });
+
+  delete require.cache[require.resolve("../../api/post-seo")];
+  const handler = require("../../api/post-seo");
+  const res = responseRecorder();
+  await handler({ query: { post_id: POST_ID } }, res);
+
+  assert.equal(res.statusCode, 503);
+  assert.equal(res.headers["X-Post-Diagnostics"], "post_400");
+  assert.equal(res.headers["Retry-After"], "60");
 
   global.fetch = previousFetch;
   restoreEnv(previousEnv);
