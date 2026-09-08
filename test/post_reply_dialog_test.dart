@@ -4,14 +4,51 @@ import 'package:sharemarium/services/input_security_service.dart';
 import 'package:sharemarium/widgets/post_reply_dialog.dart';
 
 void main() {
-  testWidgets('locked reply dialog shows the limited-content message', (
+  testWidgets('guest reply dialog guides the user to sign in', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        routes: {
+          '/login': (_) => const Scaffold(body: Text('login screen')),
+        },
+        home: Builder(
+          builder: (context) => TextButton(
+            onPressed: () => showPostReplyLockedDialog(
+              context: context,
+              isAuthenticated: false,
+            ),
+            child: const Text('open'),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    expect(find.byIcon(Icons.login_rounded), findsOneWidget);
+    expect(find.text('返信するにはサインインしてください'), findsOneWidget);
+    expect(
+      find.text('公開投稿と返信はサインインせず閲覧できます。返信を投稿する場合のみサインインが必要です。'),
+      findsOneWidget,
+    );
+    expect(find.text('サインイン'), findsOneWidget);
+
+    await tester.tap(find.text('サインイン'));
+    await tester.pumpAndSettle();
+    expect(find.text('login screen'), findsOneWidget);
+  });
+
+  testWidgets('signed-in locked reply dialog shows the limited-content message', (
     tester,
   ) async {
     await tester.pumpWidget(
       MaterialApp(
         home: Builder(
           builder: (context) => TextButton(
-            onPressed: () => showPostReplyLockedDialog(context: context),
+            onPressed: () => showPostReplyLockedDialog(
+              context: context,
+              isAuthenticated: true,
+            ),
             child: const Text('open'),
           ),
         ),
@@ -23,6 +60,7 @@ void main() {
 
     expect(find.byIcon(Icons.lock_rounded), findsOneWidget);
     expect(find.text('返信は限定コンテンツです'), findsOneWidget);
+    expect(find.text('サインイン'), findsNothing);
   });
 
   testWidgets('reply dialog shows only the requested length guidance', (
