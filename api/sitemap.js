@@ -3,9 +3,11 @@ const LASTMOD = process.env.SEO_LASTMOD || "2026-09-02";
 const IS_PRODUCTION = process.env.VERCEL_ENV === "production";
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
+const MIN_INDEXABLE_REVIEW_CHARS = 80;
 
 const FIXED_URLS = [
   { path: "/", changefreq: "daily", priority: "1.0", lastmod: LASTMOD },
+  { path: "/posts", changefreq: "daily", priority: "0.8", lastmod: LASTMOD },
   { path: "/privacy", changefreq: "monthly", priority: "0.4", lastmod: LASTMOD },
   { path: "/terms", changefreq: "monthly", priority: "0.4", lastmod: LASTMOD },
   {
@@ -66,6 +68,20 @@ function isIndexableProfile(profile) {
   );
 }
 
+function normalizedReviewLength(value) {
+  const normalized = String(value || "").replace(/\s+/g, " ").trim();
+  return Array.from(normalized).length;
+}
+
+function isIndexablePost(post) {
+  return (
+    post &&
+    String(post.id || "").trim().length > 0 &&
+    post.is_spoiler !== true &&
+    normalizedReviewLength(post.comment) >= MIN_INDEXABLE_REVIEW_CHARS
+  );
+}
+
 function sitemapUrl({ loc, path, changefreq, priority, lastmod }) {
   const absoluteLoc = loc || toAbsoluteUrl(path);
   const lastmodXml = lastmod
@@ -107,6 +123,35 @@ async function fetchPublicProfiles() {
   };
 }
 
+async function fetchPublicPosts() {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    return { posts: [], diagnostic: "posts=skipped:missing_env" };
+  }
+
+  const url = new URL("/rest/v1/posts", SUPABASE_URL);
+  url.searchParams.set("select", "id,comment,created_at,is_spoiler");
+  url.searchParams.set("is_spoiler", "is.false");
+  url.searchParams.set("order", "created_at.desc");
+  url.searchParams.set("limit", "1000");
+
+  const response = await fetch(url, {
+    headers: {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`posts_http_${response.status}`);
+  }
+
+  const posts = await response.json();
+  return {
+    posts: Array.isArray(posts) ? posts : [],
+    diagnostic: "posts=ok",
+  };
+}
+
 async function dynamicProfileUrls() {
   try {
     const { profiles, diagnostic } = await fetchPublicProfiles();
@@ -130,6 +175,32 @@ async function dynamicProfileUrls() {
   }
 }
 
+async function dynamicPostUrls() {
+  try {
+    const { posts, diagnostic } = await fetchPublicPosts();
+    return {
+      urls: posts.filter(isIndexablePost).map((post) => ({
+        path: `/posts/${encodeURIComponent(String(post.id))}`,
+        changefreq: "monthly",
+        priority: "0.7",
+        lastmod: post.created_at
+          ? String(post.created_at).slice(0, 10)
+          : undefined,
+      })),
+      diagnostic,
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message.slice(0, 80) : "unknown";
+    if (!IS_PRODUCTION) {
+      console.error("sitemap post fetch failed:", message);
+    }
+    return {
+      urls: [],
+      diagnostic: IS_PRODUCTION ? "posts=error" : `posts=error:${message}`,
+    };
+  }
+}
+
 function dedupeUrls(urls) {
   const byLoc = new Map();
   for (const url of urls) {
@@ -142,13 +213,21 @@ function dedupeUrls(urls) {
 }
 
 module.exports = async (_req, res) => {
-  const profiles = await dynamicProfileUrls();
-  const urls = dedupeUrls([...FIXED_URLS, ...profiles.urls]).map(sitemapUrl);
+  const [profiles, posts] = await Promise.all([
+    dynamicProfileUrls(),
+    dynamicPostUrls(),
+  ]);
+  const urls = dedupeUrls([
+    ...FIXED_URLS,
+    ...profiles.urls,
+    ...posts.urls,
+  ]).map(sitemapUrl);
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.join("\n")}\n</urlset>\n`;
 
   res.setHeader("Content-Type", "application/xml; charset=utf-8");
   res.setHeader("X-Sitemap-Diagnostics", profiles.diagnostic);
+  res.setHeader("X-Sitemap-Post-Diagnostics", posts.diagnostic);
   if (!IS_PRODUCTION) {
     res.setHeader("X-Robots-Tag", "noindex, nofollow");
   }
