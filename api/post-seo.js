@@ -11,7 +11,7 @@ function escapeHtml(value) {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
+    .replace(/\"/g, "&quot;")
     .replace(/'/g, "&#39;");
 }
 
@@ -69,6 +69,13 @@ function postProfile(post) {
   return post?.profiles || null;
 }
 
+function supabaseHeaders() {
+  return {
+    apikey: SUPABASE_ANON_KEY,
+    Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+  };
+}
+
 async function fetchPost(postId) {
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
     throw new Error("supabase_env_missing");
@@ -82,19 +89,64 @@ async function fetchPost(postId) {
   url.searchParams.set("id", `eq.${postId}`);
   url.searchParams.set("limit", "1");
 
-  const response = await fetch(url, {
-    headers: {
-      apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-    },
-  });
-
+  const response = await fetch(url, { headers: supabaseHeaders() });
   if (!response.ok) {
     throw new Error(`post_http_${response.status}`);
   }
 
   const body = await response.json();
   return Array.isArray(body) && body.length > 0 ? body[0] : null;
+}
+
+async function fetchReplies(postId) {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return [];
+
+  const url = new URL("/rest/v1/post_replies", SUPABASE_URL);
+  url.searchParams.set(
+    "select",
+    "id,post_id,profile_id,parent_reply_id,message,has_spoiler,created_at,profiles(username,user_id)",
+  );
+  url.searchParams.set("post_id", `eq.${postId}`);
+  url.searchParams.set("order", "created_at.asc");
+  url.searchParams.set("limit", "500");
+
+  const response = await fetch(url, { headers: supabaseHeaders() });
+  if (!response.ok) {
+    throw new Error(`replies_http_${response.status}`);
+  }
+
+  const body = await response.json();
+  return Array.isArray(body) ? body : [];
+}
+
+function renderReplies(replies) {
+  if (!Array.isArray(replies) || replies.length === 0) {
+    return '<p class="empty-replies">まだ返信はありません。</p>';
+  }
+
+  return replies
+    .map((reply) => {
+      const profile = postProfile(reply);
+      const username =
+        normalizeText(profile?.username) || "Sharemariumユーザー";
+      const profileUrl = canonicalProfileUrl(profile, reply.profile_id);
+      const displayDate = formatDate(reply.created_at);
+      const isSpoiler = reply.has_spoiler === true;
+      const replyBody = isSpoiler
+        ? '<p class="reply-spoiler">ネタバレを含む返信です。本文は公開HTMLには表示していません。</p>'
+        : `<p>${escapeHtml(reply.message || "").replace(/\r?\n/g, "<br>")}</p>`;
+      const nestedClass = reply.parent_reply_id == null ? "" : " reply-child";
+
+      return `<article class="reply${nestedClass}">
+        <div class="reply-meta">
+          <a href="${escapeHtml(profileUrl)}">${escapeHtml(username)}</a>
+          ${displayDate ? `<time datetime="${escapeHtml(String(reply.created_at || ""))}">${escapeHtml(displayDate)}</time>` : ""}
+          ${isSpoiler ? '<span class="spoiler-badge">ネタバレあり</span>' : ""}
+        </div>
+        ${replyBody}
+      </article>`;
+    })
+    .join("");
 }
 
 function renderErrorPage({ title, message, statusCode, res }) {
@@ -162,9 +214,19 @@ module.exports = async (req, res) => {
     });
   }
 
+  let replies = [];
+  try {
+    replies = await fetchReplies(postId);
+    res.setHeader("X-Reply-Diagnostics", "replies=ok");
+  } catch (err) {
+    replies = [];
+    res.setHeader("X-Reply-Diagnostics", "replies=error");
+  }
+
   const profile = postProfile(post);
   const username = normalizeText(profile?.username) || "Sharemariumユーザー";
-  const bookTitle = normalizeText(post.book_title) || normalizeText(post.book_id) || "本";
+  const bookTitle =
+    normalizeText(post.book_title) || normalizeText(post.book_id) || "本";
   const comment = String(post.comment || "").trim();
   const ratingRaw = Number(post.rating);
   const rating = Number.isFinite(ratingRaw)
@@ -176,7 +238,8 @@ module.exports = async (req, res) => {
   const profileUrl = canonicalProfileUrl(profile, post.profile_id);
   const description = shortDescription(comment, bookTitle, username);
   const isIndexable =
-    post.is_spoiler !== true && textLength(comment) >= MIN_INDEXABLE_REVIEW_CHARS;
+    post.is_spoiler !== true &&
+    textLength(comment) >= MIN_INDEXABLE_REVIEW_CHARS;
   const robots = isIndexable ? "index,follow" : "noindex,follow";
   const title = `${bookTitle}のレビュー | ${username} | ${SITE_NAME}`;
 
@@ -210,12 +273,15 @@ module.exports = async (req, res) => {
   const reviewBody = comment
     ? escapeHtml(comment).replace(/\r?\n/g, "<br>")
     : "レビュー本文はありません。";
-  const spoilerNotice = post.is_spoiler === true
-    ? '<p class="notice">この投稿にはネタバレが含まれます。</p>'
-    : "";
-  const ratingHtml = rating === null
-    ? ""
-    : `<span class="rating" aria-label="5点満点中${escapeHtml(rating)}点">★ ${escapeHtml(rating)} / 5</span>`;
+  const spoilerNotice =
+    post.is_spoiler === true
+      ? '<p class="notice">この投稿にはネタバレが含まれます。</p>'
+      : "";
+  const ratingHtml =
+    rating === null
+      ? ""
+      : `<span class="rating" aria-label="5点満点中${escapeHtml(rating)}点">★ ${escapeHtml(rating)} / 5</span>`;
+  const repliesHtml = renderReplies(replies);
 
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   if (!isIndexable) {
@@ -256,6 +322,15 @@ module.exports = async (req, res) => {
       article p { margin: 0; white-space: normal; overflow-wrap: anywhere; }
       .notice { margin: 0 0 16px; padding: 10px 12px; border-radius: 8px; background: color-mix(in srgb, #d00303 14%, transparent); font-weight: 700; }
       .about { margin-top: 26px; font-size: 0.94rem; }
+      .replies { margin-top: 34px; }
+      .replies h2 { margin-bottom: 14px; }
+      .reply { margin-bottom: 12px; padding: 16px; }
+      .reply-child { margin-left: 28px; }
+      .reply-meta { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-bottom: 8px; font-size: 0.9rem; }
+      .reply-meta a { color: inherit; font-weight: 700; }
+      .spoiler-badge { font-weight: 700; }
+      .reply-spoiler { font-weight: 650; }
+      .empty-replies { opacity: 0.75; }
       footer { padding-top: 20px; padding-bottom: 36px; border-top: 1px solid color-mix(in srgb, CanvasText 16%, transparent); font-size: 0.9rem; }
     </style>
   </head>
@@ -271,6 +346,10 @@ module.exports = async (req, res) => {
       </div>
       ${spoilerNotice}
       <article aria-label="レビュー本文"><p>${reviewBody}</p></article>
+      <section class="replies" aria-labelledby="replies-title">
+        <h2 id="replies-title">返信 ${replies.length}件</h2>
+        ${repliesHtml}
+      </section>
       <p class="about">このページはSharemariumに公開された読書レビューの個別ページです。</p>
     </main>
     <footer><a href="/posts">投稿一覧へ戻る</a></footer>
