@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import '../models/moderation_models.dart';
 import '../services/supabase_service.dart';
 import 'contact_screen.dart';
+import 'post_detail_screen.dart';
+import 'public_posts_screen.dart';
 
 class AccountSuspensionGate extends StatefulWidget {
   const AccountSuspensionGate({super.key, required this.child});
@@ -24,14 +26,44 @@ class _AccountSuspensionGateState extends State<AccountSuspensionGate> {
     });
   }
 
+  String _currentAppPath() {
+    final uri = Uri.base;
+    if (uri.fragment.startsWith('/')) {
+      return Uri.tryParse(uri.fragment)?.path ?? uri.path;
+    }
+    return uri.path;
+  }
+
+  Widget _routeAwareChild() {
+    final path = _currentAppPath();
+    if (path == '/posts' || path == '/posts/') {
+      return const PublicPostsScreen();
+    }
+
+    const prefix = '/posts/';
+    if (path.startsWith(prefix)) {
+      final encodedPostId = path.substring(prefix.length);
+      if (encodedPostId.isNotEmpty && !encodedPostId.contains('/')) {
+        try {
+          return PostDetailScreen(postId: Uri.decodeComponent(encodedPostId));
+        } on FormatException {
+          // Fall through to the ordinary app route for malformed paths.
+        }
+      }
+    }
+
+    return widget.child;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<SupabaseService>(
       builder: (context, service, _) {
+        final routedChild = _routeAwareChild();
         if (!service.isAuthenticated) {
           _checkedUserId = null;
           _statusFuture = null;
-          return widget.child;
+          return routedChild;
         }
 
         final userId = service.activeProfileId;
@@ -49,7 +81,7 @@ class _AccountSuspensionGateState extends State<AccountSuspensionGate> {
               );
             }
             final status = snapshot.data;
-            if (status == null || !status.isSuspended) return widget.child;
+            if (status == null || !status.isSuspended) return routedChild;
             return _SuspendedAccountScreen(
               status: status,
               onRefresh: () => _refresh(service),
