@@ -4,7 +4,9 @@ import 'package:provider/provider.dart';
 import '../models/moderation_models.dart';
 import '../services/supabase_service.dart';
 import 'contact_screen.dart';
+import 'legal_consent_screen.dart';
 import 'post_detail_screen.dart';
+import 'profile_onboarding_screen.dart';
 import 'public_posts_screen.dart';
 
 class AccountSuspensionGate extends StatefulWidget {
@@ -34,10 +36,16 @@ class _AccountSuspensionGateState extends State<AccountSuspensionGate> {
     return uri.path;
   }
 
+  Widget _withAppUsageGates(Widget child) {
+    return LegalConsentGate(
+      child: ProfileOnboardingGate(child: child),
+    );
+  }
+
   Widget _routeAwareChild() {
     final path = _currentAppPath();
     if (path == '/posts' || path == '/posts/') {
-      return const PublicPostsScreen();
+      return _withAppUsageGates(const PublicPostsScreen());
     }
 
     const prefix = '/posts/';
@@ -45,7 +53,9 @@ class _AccountSuspensionGateState extends State<AccountSuspensionGate> {
       final encodedPostId = path.substring(prefix.length);
       if (encodedPostId.isNotEmpty && !encodedPostId.contains('/')) {
         try {
-          return PostDetailScreen(postId: Uri.decodeComponent(encodedPostId));
+          return _withAppUsageGates(
+            PostDetailScreen(postId: Uri.decodeComponent(encodedPostId)),
+          );
         } on FormatException {
           // Fall through to the ordinary app route for malformed paths.
         }
