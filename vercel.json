@@ -73,6 +73,10 @@
       }
     },
     {
+      "src": "/posts/([^/]+)",
+      "dest": "/api/post-seo?post_id=$1"
+    },
+    {
       "src": "/(.*)",
       "has": [
         {
