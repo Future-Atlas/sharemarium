@@ -7,6 +7,7 @@ const MIN_INDEXABLE_REVIEW_CHARS = 80;
 
 const FIXED_URLS = [
   { path: "/", changefreq: "daily", priority: "1.0", lastmod: LASTMOD },
+  { path: "/posts", changefreq: "daily", priority: "0.8", lastmod: LASTMOD },
   { path: "/privacy", changefreq: "monthly", priority: "0.4", lastmod: LASTMOD },
   { path: "/terms", changefreq: "monthly", priority: "0.4", lastmod: LASTMOD },
   {
