@@ -15,7 +15,6 @@ function normalizedLastmod(value) {
 
 const FIXED_URLS = [
   { path: "/", changefreq: "daily", priority: "1.0", lastmod: FIXED_LASTMOD },
-  { path: "/posts", changefreq: "daily", priority: "0.8", lastmod: FIXED_LASTMOD },
   { path: "/privacy", changefreq: "monthly", priority: "0.4", lastmod: FIXED_LASTMOD },
   { path: "/terms", changefreq: "monthly", priority: "0.4", lastmod: FIXED_LASTMOD },
   {
@@ -38,6 +37,13 @@ const FIXED_URLS = [
   },
   { path: "/contact", changefreq: "monthly", priority: "0.4", lastmod: FIXED_LASTMOD },
 ];
+
+const POSTS_INDEX_URL = {
+  path: "/posts",
+  changefreq: "daily",
+  priority: "0.8",
+  lastmod: FIXED_LASTMOD,
+};
 
 function xmlEscape(value) {
   return String(value)
@@ -138,7 +144,6 @@ async function fetchPublicPosts() {
 
   const url = new URL("/rest/v1/posts", SUPABASE_URL);
   url.searchParams.set("select", "id,comment,created_at,is_spoiler");
-  url.searchParams.set("is_spoiler", "is.false");
   url.searchParams.set("order", "created_at.desc");
   url.searchParams.set("limit", "1000");
 
@@ -195,6 +200,7 @@ async function dynamicPostUrls() {
           ? String(post.created_at).slice(0, 10)
           : undefined,
       })),
+      hasPublicPosts: posts.length > 0,
       diagnostic,
     };
   } catch (err) {
@@ -204,6 +210,7 @@ async function dynamicPostUrls() {
     }
     return {
       urls: [],
+      hasPublicPosts: false,
       diagnostic: IS_PRODUCTION ? "posts=error" : `posts=error:${message}`,
     };
   }
@@ -227,6 +234,7 @@ module.exports = async (_req, res) => {
   ]);
   const urls = dedupeUrls([
     ...FIXED_URLS,
+    ...(posts.hasPublicPosts ? [POSTS_INDEX_URL] : []),
     ...profiles.urls,
     ...posts.urls,
   ]).map(sitemapUrl);
@@ -243,4 +251,4 @@ module.exports = async (_req, res) => {
   return res.status(200).send(xml);
 };
 
-module.exports._test = { normalizedLastmod, sitemapUrl };
+module.exports._test = { normalizedLastmod, sitemapUrl, isIndexablePost };
