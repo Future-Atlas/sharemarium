@@ -267,7 +267,7 @@ reset role;
 
 select is(
   (
-    select sum(amount_minor)
+    select sum(amount_minor)::bigint
     from private.billing_refunds
     where charge_id = '74000000-0000-4000-8000-000000000001'
       and status in ('pending', 'succeeded')
