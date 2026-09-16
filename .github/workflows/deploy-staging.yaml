@@ -67,5 +67,6 @@ jobs:
       - name: Smoke test staging preview
         env:
           SMOKE_BASE_URL: ${{ steps.deploy_preview.outputs.url }}
+          SMOKE_PROFILE: staging
           SMOKE_BYPASS_TOKEN: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         run: node scripts/production-smoke.mjs
