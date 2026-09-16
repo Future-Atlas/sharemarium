@@ -2,9 +2,9 @@
 set -euo pipefail
 
 : "${DEPLOYMENT_URL:?DEPLOYMENT_URL is required}"
-: "${VERCEL_SCOPE:?VERCEL_SCOPE is required}"
 : "${VERCEL_TOKEN:?VERCEL_TOKEN is required}"
 
+base_url="${DEPLOYMENT_URL%/}"
 workdir="$(mktemp -d)"
 trap 'rm -rf "$workdir"' EXIT
 
@@ -17,12 +17,13 @@ check_endpoint() {
   safe_name="$(printf '%s' "$path" | tr '/?=&' '____')"
   local headers="$workdir/${safe_name}.headers"
   local body="$workdir/${safe_name}.body"
+  local url="${base_url}${path}"
 
-  vercel \
-    --scope "$VERCEL_SCOPE" \
-    --token "$VERCEL_TOKEN" \
-    curl "$path" \
-    --deployment "$DEPLOYMENT_URL" \
+  # Vercel CLI reads VERCEL_TOKEN from the environment. Using a full Preview URL
+  # lets `vercel curl` authenticate and bypass Deployment Protection without
+  # leaking the token into native curl arguments.
+  vercel curl "$url" \
+    --location \
     --fail \
     --silent \
     --show-error \
