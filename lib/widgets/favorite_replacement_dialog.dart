@@ -2,15 +2,27 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/book.dart';
+import '../services/favorite_retention_service.dart';
 import '../services/supabase_service.dart';
 
-/// Lets a standard-plan user replace one of their three favorites at the
-/// moment a new completed book is added.
+/// Handles a favorite-limit result from the legacy Flutter client.
+///
+/// Premium is unlimited in the database, so if the old finite client precheck
+/// fires for a Premium account we add through the Premium-only RPC instead of
+/// showing a replacement dialog. Capped plans continue through the existing
+/// replacement UX.
 Future<bool> showFavoriteReplacementDialog({
   required BuildContext context,
   required String targetBookId,
   required String targetBookTitle,
 }) async {
+  final retentionState = await FavoriteRetentionService.fetchState();
+  if (!context.mounted) return false;
+  if (retentionState?.isPremium == true &&
+      retentionState?.isUnlimited == true) {
+    return FavoriteRetentionService.addPremiumFavorite(targetBookId);
+  }
+
   final service = Provider.of<SupabaseService>(context, listen: false);
   final favorites = await service.fetchUserFavorites(service.activeProfileId);
   if (!context.mounted) return false;
