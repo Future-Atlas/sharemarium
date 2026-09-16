@@ -5,7 +5,6 @@ set -euo pipefail
 : "${VERCEL_SCOPE:?VERCEL_SCOPE is required}"
 : "${VERCEL_TOKEN:?VERCEL_TOKEN is required}"
 
-base_url="${DEPLOYMENT_URL%/}"
 workdir="$(mktemp -d)"
 trap 'rm -rf "$workdir"' EXIT
 
@@ -19,10 +18,15 @@ check_endpoint() {
   local headers="$workdir/${safe_name}.headers"
   local body="$workdir/${safe_name}.body"
 
-  vercel curl "${base_url}${path}" \
+  vercel curl "$path" \
+    --deployment "$DEPLOYMENT_URL" \
     --scope "$VERCEL_SCOPE" \
     --token "$VERCEL_TOKEN" \
-    -fsS -D "$headers" -o "$body"
+    --fail \
+    --silent \
+    --show-error \
+    --dump-header "$headers" \
+    --output "$body"
 
   if ! grep -Eqi "^content-type:.*${content_type_pattern}" "$headers"; then
     echo "::error::${label}: unexpected content-type"

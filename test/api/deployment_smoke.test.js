@@ -67,15 +67,22 @@ test("staging deployment uploads Flutter output and API source instead of a prev
   assert.match(vercelIgnore, /^!vercel\.json$/m);
 });
 
-test("staging smoke script uses authenticated Vercel curl for protected previews", () => {
+test("staging smoke script uses deployment-aware Vercel curl without short-option collisions", () => {
   const script = fs.readFileSync(
     path.resolve(__dirname, "../../scripts/staging-smoke.sh"),
     "utf8",
   );
 
-  assert.match(script, /vercel curl "\$\{base_url\}\$\{path\}"/);
+  assert.match(script, /vercel curl "\$path"/);
+  assert.match(script, /--deployment "\$DEPLOYMENT_URL"/);
   assert.match(script, /--scope "\$VERCEL_SCOPE"/);
   assert.match(script, /--token "\$VERCEL_TOKEN"/);
+  assert.match(script, /--fail/);
+  assert.match(script, /--silent/);
+  assert.match(script, /--show-error/);
+  assert.match(script, /--dump-header "\$headers"/);
+  assert.match(script, /--output "\$body"/);
+  assert.doesNotMatch(script, /-fsS/);
   assert.match(script, /\/flutter_bootstrap\.js/);
   assert.match(script, /\/api\/home-ad-eligibility/);
 });
