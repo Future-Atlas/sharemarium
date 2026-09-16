@@ -52,17 +52,27 @@ export function validateResponse(check, response, body) {
   }
 }
 
-async function fetchWithTimeout(url, timeoutMs, fetchImpl) {
+async function fetchWithTimeout(
+  url,
+  timeoutMs,
+  fetchImpl,
+  bypassToken = "",
+) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const headers = {
+    "user-agent": "Sharemarium-Deployment-Smoke-Test/1.0",
+    accept: "*/*",
+  };
+  if (bypassToken) {
+    headers["x-vercel-protection-bypass"] = bypassToken;
+  }
+
   try {
     return await fetchImpl(url, {
       redirect: "follow",
       signal: controller.signal,
-      headers: {
-        "user-agent": "Sharemarium-Production-Smoke-Test/1.0",
-        accept: "*/*",
-      },
+      headers,
     });
   } finally {
     clearTimeout(timeout);
@@ -77,6 +87,7 @@ export async function checkEndpoint(
     retryDelayMs = DEFAULT_RETRY_DELAY_MS,
     timeoutMs = DEFAULT_TIMEOUT_MS,
     fetchImpl = fetch,
+    bypassToken = process.env.SMOKE_BYPASS_TOKEN || "",
   } = {},
 ) {
   const url = new URL(check.path, baseUrl).toString();
@@ -84,7 +95,12 @@ export async function checkEndpoint(
 
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
-      const response = await fetchWithTimeout(url, timeoutMs, fetchImpl);
+      const response = await fetchWithTimeout(
+        url,
+        timeoutMs,
+        fetchImpl,
+        bypassToken,
+      );
       const body = await response.text();
       validateResponse(check, response, body);
       console.log(`OK ${response.status} ${url} (${check.description})`);
@@ -106,26 +122,27 @@ export async function checkEndpoint(
 export async function runProductionSmokeTests({
   baseUrl = process.env.SMOKE_BASE_URL || DEFAULT_BASE_URL,
   fetchImpl = fetch,
+  bypassToken = process.env.SMOKE_BYPASS_TOKEN || "",
 } = {}) {
   const normalizedBaseUrl = new URL(baseUrl);
   if (!/^https?:$/.test(normalizedBaseUrl.protocol)) {
     throw new Error("SMOKE_BASE_URL must use http or https");
   }
 
-  console.log(`Running production smoke tests against ${normalizedBaseUrl.origin}`);
+  console.log(`Running deployment smoke tests against ${normalizedBaseUrl.origin}`);
   await Promise.all(
     smokeChecks.map((check) =>
-      checkEndpoint(normalizedBaseUrl, check, { fetchImpl }),
+      checkEndpoint(normalizedBaseUrl, check, { fetchImpl, bypassToken }),
     ),
   );
-  console.log("Production smoke tests passed.");
+  console.log("Deployment smoke tests passed.");
 }
 
 const invokedPath = process.argv[1] ? pathToFileURL(resolve(process.argv[1])).href : null;
 if (invokedPath === import.meta.url) {
   runProductionSmokeTests().catch((error) => {
     const message = error instanceof Error ? error.stack || error.message : String(error);
-    console.error(`::error::Production smoke test failed\n${message}`);
+    console.error(`::error::Deployment smoke test failed\n${message}`);
     process.exitCode = 1;
   });
 }
