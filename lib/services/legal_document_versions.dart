@@ -9,10 +9,10 @@ class LegalDocumentVersions {
   // Full rules and revision reasons: docs/legal_changelog.md
 
   // Technical consent-set identifier. This is not a document version.
-  static const bundle = '1.11.0';
+  static const bundle = '1.12.0';
 
   static const terms = '1.10.0';
-  static const privacy = '1.9.0';
+  static const privacy = '1.10.0';
   static const communityGuidelines = '1.3.0';
   static const infringementPolicy = '1.2.0';
   static const externalTransmission = '1.9.0';
