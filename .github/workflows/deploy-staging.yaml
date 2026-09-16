@@ -55,6 +55,15 @@ jobs:
           test -s build/web/flutter_bootstrap.js
           echo "Flutter build output: $(du -sh build/web | cut -f1)"
 
+      - name: Verify Vercel upload manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          vercel deploy . --target=preview --dry --format=json --scope="$VERCEL_SCOPE" --token="$VERCEL_TOKEN" > /tmp/vercel-deploy-manifest.json
+          grep -q 'build/web/flutter_bootstrap.js' /tmp/vercel-deploy-manifest.json
+          grep -q 'api/home-ad-eligibility.js' /tmp/vercel-deploy-manifest.json
+          echo "Verified Flutter assets and API source are included in the Vercel deployment manifest."
+
       - name: Deploy to Vercel Preview
         id: deploy_preview
         shell: bash
