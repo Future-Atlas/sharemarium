@@ -45,11 +45,15 @@
         const adScriptUrl =
           "https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=" +
           adClient;
+        const homeContentEligibilityTtlMs = 60 * 1000;
 
         let adScriptLoaded = false;
         let entitlementState = "unknown";
         let entitlementToken = "";
         let entitlementRequest = null;
+        let homeContentState = "unknown";
+        let homeContentRequest = null;
+        let homeContentCheckedAt = 0;
 
         function normalizedPath() {
           return (window.location.pathname || "/").replace(/\/+$/, "") || "/";
@@ -114,6 +118,44 @@
           return entitlementRequest;
         }
 
+        function refreshHomeContentEligibility() {
+          if (!isAdsRouteAllowed()) {
+            homeContentState = "unknown";
+            homeContentCheckedAt = 0;
+            return Promise.resolve();
+          }
+
+          const now = Date.now();
+          const isFresh =
+            homeContentState !== "unknown" &&
+            now - homeContentCheckedAt < homeContentEligibilityTtlMs;
+          if (isFresh) return homeContentRequest || Promise.resolve();
+          if (homeContentRequest) return homeContentRequest;
+
+          homeContentState = "unknown";
+          homeContentRequest = fetch("/api/home-ad-eligibility", {
+            method: "GET",
+            cache: "no-store",
+          })
+            .then((response) => {
+              if (!response.ok) throw new Error("home_content_lookup_failed");
+              return response.json();
+            })
+            .then((body) => {
+              homeContentState = body?.eligible === true ? "eligible" : "not_eligible";
+            })
+            .catch(() => {
+              // Fail closed when the independent-content check is unavailable.
+              homeContentState = "not_eligible";
+            })
+            .finally(() => {
+              homeContentCheckedAt = Date.now();
+              homeContentRequest = null;
+              scheduleAdCheck();
+            });
+          return homeContentRequest;
+        }
+
         function hasMeaningfulContent() {
           if (!document.body) return false;
           const text = (document.body.innerText || document.body.textContent || "")
@@ -126,6 +168,7 @@
         function shouldLoadAds() {
           const accessToken = currentSupabaseAccessToken();
           if (accessToken && entitlementState !== "ads_allowed") return false;
+          if (homeContentState !== "eligible") return false;
           return (
             isAdsRouteAllowed() &&
             hasMeaningfulContent() &&
@@ -135,7 +178,13 @@
 
         function reloadIfAdsAreNoLongerAllowed() {
           if (!adScriptLoaded) return false;
-          if (isAdsRouteAllowed() && entitlementState !== "ad_free") return false;
+          if (
+            isAdsRouteAllowed() &&
+            entitlementState !== "ad_free" &&
+            homeContentState !== "not_eligible"
+          ) {
+            return false;
+          }
           window.location.replace(window.location.href);
           return true;
         }
@@ -165,6 +214,7 @@
           adCheckTimer = window.setTimeout(() => {
             adCheckTimer = 0;
             void refreshAdEntitlement();
+            void refreshHomeContentEligibility();
             if (reloadIfAdsAreNoLongerAllowed()) return;
             if (loadAdsIfAllowed() && contentObserver) {
               contentObserver.disconnect();
@@ -186,6 +236,7 @@
         function checkAfterDomReady() {
           observeFlutterContent();
           void refreshAdEntitlement();
+          void refreshHomeContentEligibility();
           scheduleAdCheck();
           window.setTimeout(scheduleAdCheck, 1000);
           window.setTimeout(scheduleAdCheck, 3000);
