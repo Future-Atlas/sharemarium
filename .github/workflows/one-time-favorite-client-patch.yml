@@ -1,0 +1,151 @@
+name: One-time favorite client patch
+
+on:
+  push:
+    branches:
+      - feat/favorite-retention-downgrade
+    paths:
+      - .github/workflows/one-time-favorite-client-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/favorite-retention-downgrade
+          fetch-depth: 0
+
+      - name: Apply exact favorite client replacements
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path_str: str, old: str, new: str) -> None:
+              path = Path(path_str)
+              text = path.read_text(encoding='utf-8')
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(
+                      f'{path_str}: expected exactly one match, found {count}'
+                  )
+              path.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          service = 'lib/services/supabase_service.dart'
+          replace_once(
+              service,
+              """  static const int standardFavoriteLimit = 3;
+          static const int subscriberFavoriteLimit = 12;
+          """,
+              """  static const int standardFavoriteLimit = 3;
+          static const int subscriberFavoriteLimit = 12;
+          static const int premiumFavoriteLimit = 2147483647;
+          """,
+          )
+
+          replace_once(
+              service,
+              """        final response = await _client!
+                      .from('favorites')
+                      .select('book_id, created_at')
+                      .eq('profile_id', profileId)
+                      .order('created_at', ascending: false)
+                      .limit(12);
+          """,
+              """        final response = await _client!
+                      .from('favorites')
+                      .select('book_id, created_at')
+                      .eq('profile_id', profileId)
+                      .order('created_at', ascending: false);
+          """,
+          )
+
+          replace_once(
+              service,
+              """          favoriteLimit = await fetchCurrentFavoriteLimit();
+                    final existingFavorites = await _client!
+                        .from('favorites')
+                        .select('book_id')
+                        .eq('profile_id', profileId)
+                        .limit(favoriteLimit);
+                    if ((existingFavorites as List<dynamic>).length >= favoriteLimit) {
+                      return favoriteLimit == subscriberFavoriteLimit
+                          ? FavoriteToggleResult.subscriberLimitReached
+                          : FavoriteToggleResult.standardLimitReached;
+                    }
+          """,
+              """          favoriteLimit = await fetchCurrentFavoriteLimit();
+                    if (favoriteLimit < premiumFavoriteLimit) {
+                      final existingFavorites = await _client!
+                          .from('favorites')
+                          .select('book_id')
+                          .eq('profile_id', profileId)
+                          .limit(favoriteLimit);
+                      if ((existingFavorites as List<dynamic>).length >= favoriteLimit) {
+                        return favoriteLimit == subscriberFavoriteLimit
+                            ? FavoriteToggleResult.subscriberLimitReached
+                            : FavoriteToggleResult.standardLimitReached;
+                      }
+                    }
+          """,
+          )
+
+          replace_once(
+              service,
+              """      return parsed == subscriberFavoriteLimit
+                    ? subscriberFavoriteLimit
+                    : standardFavoriteLimit;
+          """,
+              """      if (parsed == premiumFavoriteLimit) return premiumFavoriteLimit;
+                if (parsed == subscriberFavoriteLimit) return subscriberFavoriteLimit;
+                return standardFavoriteLimit;
+          """,
+          )
+
+          profile = 'lib/screens/user_profile_screen.dart'
+          replace_once(
+              profile,
+              """    if (result == FavoriteToggleResult.standardLimitReached) {
+          """,
+              """    if (result == FavoriteToggleResult.standardLimitReached ||
+                  result == FavoriteToggleResult.subscriberLimitReached) {
+          """,
+          )
+          replace_once(
+              profile,
+              """            _isOwnProfile
+                      ? '${_favorites.length}冊/$_favoriteLimit冊'
+                      : '${_favorites.length}冊',
+          """,
+              """            _isOwnProfile
+                      ? _favoriteLimit >= SupabaseService.premiumFavoriteLimit
+                            ? '${_favorites.length}冊/無制限'
+                            : '${_favorites.length}冊/$_favoriteLimit冊'
+                      : '${_favorites.length}冊',
+          """,
+          )
+
+          book_list = 'lib/screens/book_list_screen.dart'
+          replace_once(
+              book_list,
+              """    if (result == FavoriteToggleResult.standardLimitReached) {
+          """,
+              """    if (result == FavoriteToggleResult.standardLimitReached ||
+                  result == FavoriteToggleResult.subscriberLimitReached) {
+          """,
+          )
+          PY
+
+      - name: Verify and commit patch
+        run: |
+          git diff --check
+          git diff --exit-code -- .github/workflows/one-time-favorite-client-patch.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib/services/supabase_service.dart lib/screens/user_profile_screen.dart lib/screens/book_list_screen.dart
+          git diff --cached --quiet && { echo "No patch needed"; exit 0; }
+          git commit -m "fix: make favorite client plan-aware"
+          git push origin HEAD:feat/favorite-retention-downgrade
