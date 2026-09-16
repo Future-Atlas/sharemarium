@@ -1,35 +1,49 @@
 const SITE_URL = "https://sharemarium.com";
-const LASTMOD = process.env.SEO_LASTMOD || "2026-09-02";
+const FIXED_LASTMOD = normalizedLastmod(process.env.SEO_LASTMOD);
 const IS_PRODUCTION = process.env.VERCEL_ENV === "production";
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
 const MIN_INDEXABLE_REVIEW_CHARS = 80;
 
+function normalizedLastmod(value) {
+  const raw = String(value || "").trim();
+  if (!raw || !/^\d{4}-\d{2}-\d{2}$/.test(raw)) return undefined;
+  const date = new Date(`${raw}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) return undefined;
+  return date.toISOString().slice(0, 10) === raw ? raw : undefined;
+}
+
 const FIXED_URLS = [
-  { path: "/", changefreq: "daily", priority: "1.0", lastmod: LASTMOD },
-  { path: "/posts", changefreq: "daily", priority: "0.8", lastmod: LASTMOD },
-  { path: "/privacy", changefreq: "monthly", priority: "0.4", lastmod: LASTMOD },
-  { path: "/terms", changefreq: "monthly", priority: "0.4", lastmod: LASTMOD },
+  { path: "/", changefreq: "daily", priority: "1.0", lastmod: FIXED_LASTMOD },
+  { path: "/privacy", changefreq: "monthly", priority: "0.4", lastmod: FIXED_LASTMOD },
+  { path: "/terms", changefreq: "monthly", priority: "0.4", lastmod: FIXED_LASTMOD },
   {
     path: "/community-guidelines",
     changefreq: "monthly",
     priority: "0.4",
-    lastmod: LASTMOD,
+    lastmod: FIXED_LASTMOD,
   },
   {
     path: "/infringement-policy",
     changefreq: "monthly",
     priority: "0.4",
-    lastmod: LASTMOD,
+    lastmod: FIXED_LASTMOD,
   },
   {
     path: "/external-transmission",
     changefreq: "monthly",
     priority: "0.4",
-    lastmod: LASTMOD,
+    lastmod: FIXED_LASTMOD,
   },
-  { path: "/contact", changefreq: "monthly", priority: "0.4", lastmod: LASTMOD },
+  { path: "/contact", changefreq: "monthly", priority: "0.4", lastmod: FIXED_LASTMOD },
 ];
+
+const POSTS_INDEX_URL = {
+  path: "/posts",
+  changefreq: "daily",
+  priority: "0.8",
+  lastmod: FIXED_LASTMOD,
+};
 
 function xmlEscape(value) {
   return String(value)
@@ -130,7 +144,6 @@ async function fetchPublicPosts() {
 
   const url = new URL("/rest/v1/posts", SUPABASE_URL);
   url.searchParams.set("select", "id,comment,created_at,is_spoiler");
-  url.searchParams.set("is_spoiler", "is.false");
   url.searchParams.set("order", "created_at.desc");
   url.searchParams.set("limit", "1000");
 
@@ -187,6 +200,7 @@ async function dynamicPostUrls() {
           ? String(post.created_at).slice(0, 10)
           : undefined,
       })),
+      hasPublicPosts: posts.length > 0,
       diagnostic,
     };
   } catch (err) {
@@ -196,6 +210,7 @@ async function dynamicPostUrls() {
     }
     return {
       urls: [],
+      hasPublicPosts: false,
       diagnostic: IS_PRODUCTION ? "posts=error" : `posts=error:${message}`,
     };
   }
@@ -219,6 +234,7 @@ module.exports = async (_req, res) => {
   ]);
   const urls = dedupeUrls([
     ...FIXED_URLS,
+    ...(posts.hasPublicPosts ? [POSTS_INDEX_URL] : []),
     ...profiles.urls,
     ...posts.urls,
   ]).map(sitemapUrl);
@@ -234,3 +250,5 @@ module.exports = async (_req, res) => {
   res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate");
   return res.status(200).send(xml);
 };
+
+module.exports._test = { normalizedLastmod, sitemapUrl, isIndexablePost };

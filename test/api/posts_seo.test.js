@@ -275,7 +275,7 @@ test("Vercel routes /posts to the posts index renderer", () => {
   assert.equal(detailRoute.dest, "/api/post-seo?post_id=$1");
 });
 
-test("sitemap contains the posts index", async () => {
+test("sitemap omits the posts index when the posts index is noindex", async () => {
   const previousEnv = {
     VERCEL_ENV: process.env.VERCEL_ENV,
     SUPABASE_URL: process.env.SUPABASE_URL,
@@ -302,7 +302,57 @@ test("sitemap contains the posts index", async () => {
   await sitemap({}, res);
 
   assert.equal(res.statusCode, 200);
+  assert.doesNotMatch(res.body, /<loc>https:\/\/sharemarium\.com\/posts<\/loc>/);
+
+  global.fetch = previousFetch;
+  restoreEnv(previousEnv);
+  delete require.cache[require.resolve("../../api/sitemap")];
+});
+
+test("sitemap includes the posts index whenever a public post makes it indexable", async () => {
+  const previousEnv = {
+    VERCEL_ENV: process.env.VERCEL_ENV,
+    SUPABASE_URL: process.env.SUPABASE_URL,
+    SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY,
+  };
+  const previousFetch = global.fetch;
+  process.env.VERCEL_ENV = "production";
+  setSupabaseEnv();
+  let postsRequest = "";
+
+  global.fetch = async (url) => {
+    const requested = String(url);
+    if (requested.includes("/rest/v1/profiles")) {
+      return { ok: true, status: 200, json: async () => [] };
+    }
+    if (requested.includes("/rest/v1/posts")) {
+      postsRequest = requested;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => [
+          {
+            id: POST_B,
+            comment: "短いネタバレ投稿",
+            created_at: "2026-09-08T01:23:45Z",
+            is_spoiler: true,
+          },
+        ],
+      };
+    }
+    throw new Error(`unexpected URL: ${requested}`);
+  };
+
+  delete require.cache[require.resolve("../../api/sitemap")];
+  const sitemap = require("../../api/sitemap");
+  const res = responseRecorder();
+  await sitemap({}, res);
+
+  assert.equal(res.statusCode, 200);
   assert.match(res.body, /<loc>https:\/\/sharemarium\.com\/posts<\/loc>/);
+  assert.doesNotMatch(res.body, new RegExp(`/posts/${POST_B}`));
+  assert.ok(postsRequest);
+  assert.equal(new URL(postsRequest).searchParams.get("is_spoiler"), null);
 
   global.fetch = previousFetch;
   restoreEnv(previousEnv);

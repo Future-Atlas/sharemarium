@@ -10,9 +10,6 @@
 
     For more details:
     * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
-
-    This is a placeholder for base href that will be replaced by the value of
-    the `--base-href` argument provided to `flutter build`.
   -->
     <base href="$FLUTTER_BASE_HREF" />
 
@@ -24,10 +21,7 @@
     />
     <meta name="robots" content="index,follow" />
     <link rel="canonical" href="https://sharemarium.com/" />
-    <meta
-      property="og:title"
-      content="Sharemarium"
-    />
+    <meta property="og:title" content="Sharemarium" />
     <meta
       property="og:description"
       content="Sharemarium（シェアマリウム）は、読んだ本を記録し、感想をみんなと共有できる読書レビューSNSです。自分用の読書記録にも、お友だちとの感想共有にも使えるSharemariumで、あなただけの本棚を作りましょう。"
@@ -36,23 +30,14 @@
     <meta property="og:type" content="website" />
     <meta property="og:locale" content="ja_JP" />
     <meta property="og:url" content="https://sharemarium.com/" />
-    <meta
-      property="og:image"
-      content="https://sharemarium.com/icons/Icon-512.png"
-    />
+    <meta property="og:image" content="https://sharemarium.com/icons/Icon-512.png" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta
-      name="twitter:title"
-      content="Sharemarium"
-    />
+    <meta name="twitter:title" content="Sharemarium" />
     <meta
       name="twitter:description"
       content="Sharemarium（シェアマリウム）は、読んだ本を記録し、感想をみんなと共有できる読書レビューSNSです。自分用の読書記録にも、お友だちとの感想共有にも使えるSharemariumで、あなただけの本棚を作りましょう。"
     />
-    <meta
-      name="twitter:image"
-      content="https://sharemarium.com/icons/Icon-512.png"
-    />
+    <meta name="twitter:image" content="https://sharemarium.com/icons/Icon-512.png" />
     <script>
       (() => {
         const allowedPath = /^\/$/;
@@ -60,11 +45,115 @@
         const adScriptUrl =
           "https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=" +
           adClient;
+        const homeContentEligibilityTtlMs = 60 * 1000;
 
         let adScriptLoaded = false;
+        let entitlementState = "unknown";
+        let entitlementToken = "";
+        let entitlementRequest = null;
+        let homeContentState = "unknown";
+        let homeContentRequest = null;
+        let homeContentCheckedAt = 0;
 
         function normalizedPath() {
           return (window.location.pathname || "/").replace(/\/+$/, "") || "/";
+        }
+
+        function isAdsRouteAllowed() {
+          return allowedPath.test(normalizedPath());
+        }
+
+        function currentSupabaseAccessToken() {
+          try {
+            for (let i = 0; i < window.localStorage.length; i += 1) {
+              const key = window.localStorage.key(i) || "";
+              if (!key.startsWith("sb-") || !key.endsWith("-auth-token")) continue;
+              const raw = window.localStorage.getItem(key);
+              if (!raw) continue;
+              const parsed = JSON.parse(raw);
+              const token = parsed?.access_token || parsed?.currentSession?.access_token;
+              if (typeof token === "string" && token.length > 0) return token;
+            }
+          } catch (_) {
+            return "";
+          }
+          return "";
+        }
+
+        function refreshAdEntitlement() {
+          const token = currentSupabaseAccessToken();
+          if (!token) {
+            entitlementToken = "";
+            entitlementState = "ads_allowed";
+            entitlementRequest = null;
+            return Promise.resolve();
+          }
+          if (token === entitlementToken && entitlementState !== "unknown") {
+            return entitlementRequest || Promise.resolve();
+          }
+
+          entitlementToken = token;
+          entitlementState = "unknown";
+          entitlementRequest = fetch("/api/ad-entitlement", {
+            method: "GET",
+            headers: { Authorization: `Bearer ${token}` },
+            cache: "no-store",
+          })
+            .then((response) => {
+              if (!response.ok) throw new Error("entitlement_lookup_failed");
+              return response.json();
+            })
+            .then((body) => {
+              entitlementState = body?.adFree === true ? "ad_free" : "ads_allowed";
+            })
+            .catch(() => {
+              // Authenticated users fail closed: if entitlement cannot be
+              // verified, do not risk showing ads to a paid subscriber.
+              entitlementState = "ad_free";
+            })
+            .finally(() => {
+              entitlementRequest = null;
+              scheduleAdCheck();
+            });
+          return entitlementRequest;
+        }
+
+        function refreshHomeContentEligibility() {
+          if (!isAdsRouteAllowed()) {
+            homeContentState = "unknown";
+            homeContentCheckedAt = 0;
+            return Promise.resolve();
+          }
+
+          const now = Date.now();
+          const isFresh =
+            homeContentState !== "unknown" &&
+            now - homeContentCheckedAt < homeContentEligibilityTtlMs;
+          if (isFresh) return homeContentRequest || Promise.resolve();
+          if (homeContentRequest) return homeContentRequest;
+
+          homeContentState = "unknown";
+          homeContentRequest = fetch("/api/home-ad-eligibility", {
+            method: "GET",
+            cache: "no-store",
+          })
+            .then((response) => {
+              if (!response.ok) throw new Error("home_content_lookup_failed");
+              return response.json();
+            })
+            .then((body) => {
+              homeContentState = body?.eligible === true ? "eligible" : "not_eligible";
+            })
+            .catch(() => {
+              // Fail closed when the independent-content check is unavailable.
+              homeContentState = "not_eligible";
+            })
+            .finally(() => {
+              homeContentCheckedAt = Date.now();
+              homeContentRequest = null;
+              scheduleAdCheck();
+            });
+          return homeContentRequest;
         }
 
         function hasMeaningfulContent() {
@@ -77,11 +166,27 @@
         }
 
         function shouldLoadAds() {
+          const accessToken = currentSupabaseAccessToken();
+          if (accessToken && entitlementState !== "ads_allowed") return false;
+          if (homeContentState !== "eligible") return false;
           return (
-            allowedPath.test(normalizedPath()) &&
+            isAdsRouteAllowed() &&
             hasMeaningfulContent() &&
             window.__sharemariumAdsAllowed !== false
           );
+        }
+
+        function reloadIfAdsAreNoLongerAllowed() {
+          if (!adScriptLoaded) return false;
+          if (
+            isAdsRouteAllowed() &&
+            entitlementState !== "ad_free" &&
+            homeContentState !== "not_eligible"
+          ) {
+            return false;
+          }
+          window.location.replace(window.location.href);
+          return true;
         }
 
         function loadAdsIfAllowed() {
@@ -108,6 +213,9 @@
           }
           adCheckTimer = window.setTimeout(() => {
             adCheckTimer = 0;
+            void refreshAdEntitlement();
+            void refreshHomeContentEligibility();
+            if (reloadIfAdsAreNoLongerAllowed()) return;
             if (loadAdsIfAllowed() && contentObserver) {
               contentObserver.disconnect();
               contentObserver = null;
@@ -127,6 +235,8 @@
 
         function checkAfterDomReady() {
           observeFlutterContent();
+          void refreshAdEntitlement();
+          void refreshHomeContentEligibility();
           scheduleAdCheck();
           window.setTimeout(scheduleAdCheck, 1000);
           window.setTimeout(scheduleAdCheck, 3000);
@@ -140,15 +250,10 @@
           checkAfterDomReady();
         }
 
-        window.addEventListener("load", scheduleAdCheck, {
-          passive: true,
-        });
-        window.addEventListener("pageshow", scheduleAdCheck, {
-          passive: true,
-        });
-        window.addEventListener("popstate", scheduleAdCheck, {
-          passive: true,
-        });
+        window.addEventListener("load", scheduleAdCheck, { passive: true });
+        window.addEventListener("pageshow", scheduleAdCheck, { passive: true });
+        window.addEventListener("popstate", scheduleAdCheck, { passive: true });
+        window.addEventListener("storage", scheduleAdCheck, { passive: true });
 
         const originalPushState = window.history.pushState;
         const originalReplaceState = window.history.replaceState;
@@ -196,7 +301,6 @@
       }
     </script>
 
-    <!-- iOS meta tags & icons -->
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="application-name" content="Sharemarium" />
     <meta name="theme-color" content="#000000" />
@@ -204,14 +308,8 @@
     <meta name="apple-mobile-web-app-title" content="Sharemarium" />
     <link rel="apple-touch-icon" sizes="192x192" href="/icons/Icon-192.png" />
 
-    <!-- Favicon -->
     <link rel="icon" type="image/png" href="/favicon.png" sizes="48x48" />
-    <link
-      rel="icon"
-      type="image/png"
-      href="/icons/Icon-192.png"
-      sizes="192x192"
-    />
+    <link rel="icon" type="image/png" href="/icons/Icon-192.png" sizes="192x192" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" sizes="any" />
     <link rel="shortcut icon" href="/favicon.png" />
 
@@ -234,32 +332,18 @@
           <h3>読みたい本を管理</h3>
           <p>気になる本を保存し、次に読む本を整理できます。</p>
           <h3>自分だけのWeb本棚</h3>
-          <p>
-            登録した本を一覧表示し、蔵書管理や読書ログの振り返りができます。
-          </p>
+          <p>登録した本を一覧表示し、蔵書管理や読書ログの振り返りができます。</p>
         </section>
         <section>
           <h2>シェアマリウムについて</h2>
-          <p>
-            シェアマリウムは英字でSharemariumと表記する、読書記録・本管理・レビュー共有のためのWebサービスです。
-          </p>
+          <p>シェアマリウムは英字でSharemariumと表記する、読書記録・本管理・レビュー共有のためのWebサービスです。</p>
         </section>
         <section>
           <h2>こんな方におすすめ</h2>
-          <p>
-            読んだ本の記録を続けたい方、本管理アプリで蔵書管理したい方、読書習慣を見直したい方に向けたサービスです。
-          </p>
+          <p>読んだ本の記録を続けたい方、本管理アプリで蔵書管理したい方、読書習慣を見直したい方に向けたサービスです。</p>
         </section>
       </main>
     </noscript>
-    <!--
-    You can customize the "flutter_bootstrap.js" script.
-    This is useful to provide a custom configuration to the Flutter loader
-    or to give the user feedback during the initialization process.
-
-    For more details:
-    * https://docs.flutter.dev/platform-integration/web/initialization
-  -->
     <script src="flutter_bootstrap.js" async></script>
     <script>
       window.si =
