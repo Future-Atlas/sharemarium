@@ -26,16 +26,32 @@ test("crawler legal routes use the synchronized legal renderer", () => {
   const vercel = JSON.parse(
     fs.readFileSync(path.join(__dirname, "../../vercel.json"), "utf8"),
   );
-  const legalRoutes = vercel.routes.filter((route) =>
+  const previewRoute = vercel.routes.find((route) =>
     String(route.dest || "").startsWith("/api/legal-seo"),
   );
-
-  assert.ok(legalRoutes.length >= 2);
-  assert.ok(
-    legalRoutes.every((route) =>
-      String(route.src).includes("privacy|terms|community-guidelines"),
-    ),
+  const crawlerRoute = vercel.routes.find((route) =>
+    String(route.dest || "").startsWith("/api/seo-router"),
   );
+
+  assert.ok(previewRoute);
+  assert.match(String(previewRoute.src), /privacy\|terms\|community-guidelines/);
+  assert.ok(crawlerRoute);
+  assert.match(String(crawlerRoute.src), /privacy\|terms\|community-guidelines/);
+  assert.ok(
+    crawlerRoute.has?.some((condition) => condition.key === "user-agent"),
+  );
+});
+
+test("shared crawler SEO router dispatches legal paths to the legal renderer", async () => {
+  delete require.cache[require.resolve("../../api/seo-router")];
+  const router = require("../../api/seo-router");
+  const res = responseRecorder();
+  await router({ query: { path: "/privacy" } }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.match(res.body, /Sharemarium プライバシーポリシー/);
+  assert.match(res.body, /Cookieその他の識別子/);
+  assert.doesNotMatch(res.body, /pagead2\.googlesyndication\.com/);
 });
 
 test("legal SEO renderer serves full Flutter legal source without AdSense", async () => {
