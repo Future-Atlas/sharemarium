@@ -253,7 +253,8 @@ class _BookListScreenState extends State<BookListScreen> {
     final service = Provider.of<SupabaseService>(context, listen: false);
     final result = await service.toggleFavorite(post.bookId);
     if (!mounted) return;
-    if (result == FavoriteToggleResult.standardLimitReached) {
+    if (result == FavoriteToggleResult.standardLimitReached ||
+        result == FavoriteToggleResult.subscriberLimitReached) {
       await _replaceFavoriteAtLimit(
         targetBookId: post.bookId,
         targetBookTitle: post.bookTitle,
