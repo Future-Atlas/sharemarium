@@ -2,25 +2,29 @@ begin;
 
 select no_plan();
 
-select like(
-  (
-    select pg_get_constraintdef(oid)
-    from pg_constraint
-    where conrelid = 'public.contact_requests'::regclass
-      and conname = 'contact_requests_category_check'
+select ok(
+  coalesce(
+    (
+      select pg_get_constraintdef(oid) like '%billing%'
+      from pg_constraint
+      where conrelid = 'public.contact_requests'::regclass
+        and conname = 'contact_requests_category_check'
+    ),
+    false
   ),
-  '%billing%',
   'contact request category constraint includes billing'
 );
 
-select like(
-  (
-    select pg_get_constraintdef(oid)
-    from pg_constraint
-    where conrelid = 'public.contact_requests'::regclass
-      and conname = 'contact_requests_category_check'
+select ok(
+  coalesce(
+    (
+      select pg_get_constraintdef(oid) like '%fraud%'
+      from pg_constraint
+      where conrelid = 'public.contact_requests'::regclass
+        and conname = 'contact_requests_category_check'
+    ),
+    false
   ),
-  '%fraud%',
   'contact request category constraint includes fraud'
 );
 
