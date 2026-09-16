@@ -95,6 +95,17 @@
       "dest": "/api/post-seo?post_id=$1"
     },
     {
+      "src": "/(privacy|terms|community-guidelines|infringement-policy|external-transmission)$",
+      "has": [
+        {
+          "type": "query",
+          "key": "seo_preview",
+          "value": "1"
+        }
+      ],
+      "dest": "/api/legal-seo?path=$1"
+    },
+    {
       "src": "/(.*)",
       "has": [
         {
@@ -117,7 +128,18 @@
       "dest": "/api/seo?path=/"
     },
     {
-      "src": "/(genre/.*|book/.*|user/.*|users/.*|profile/.*|privacy|terms|community-guidelines|infringement-policy|external-transmission|contact)",
+      "src": "/(privacy|terms|community-guidelines|infringement-policy|external-transmission)$",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": ".*([Gg]ooglebot|Mediapartners-Google|Google-Display-Ads-Bot|[Bb]ingbot|[Yy]andex[Bb]ot|[Dd]uck[Dd]uck[Bb]ot|[Bb]aiduspider|[Tt]witterbot|[Ff]acebookexternalhit|[Ff]acebot|[Ll]inkedinbot|[Ee]mbedly|[Qq]uora|[Ss]lackbot).*"
+        }
+      ],
+      "dest": "/api/legal-seo?path=$1"
+    },
+    {
+      "src": "/(genre/.*|book/.*|user/.*|users/.*|profile/.*|contact)",
       "has": [
         {
           "type": "header",
