@@ -26,6 +26,8 @@ class _ContactScreenState extends State<ContactScreen> {
     'infringement': '権利侵害に関する申出',
     'report': '投稿・利用者の通報',
     'account': 'アカウント・退会',
+    'billing': '料金・返金',
+    'fraud': '不正利用',
     'other': 'その他',
   };
 
@@ -112,7 +114,7 @@ class _ContactScreenState extends State<ContactScreen> {
                 padding: const EdgeInsets.all(20),
                 children: [
                   const Text(
-                    '個人情報の開示等、権利侵害、通報、アカウントに関するご連絡もこちらから送信できます。',
+                    '個人情報の開示等、権利侵害、通報、アカウント、料金・返金、不正利用に関するご連絡もこちらから送信できます。',
                     style: TextStyle(height: 1.6),
                   ),
                   const SizedBox(height: 20),
