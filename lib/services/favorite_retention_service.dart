@@ -1,6 +1,5 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../api/rakuten_api.dart';
 import '../models/book.dart';
 import '../utils/dev_logger.dart';
 
@@ -78,17 +77,30 @@ class FavoriteRetentionService {
       final rows = (response as List<dynamic>)
           .whereType<Map<String, dynamic>>()
           .toList(growable: false);
-      final books = await Future.wait(
-        rows.map((row) async {
-          final bookId = row['book_id']?.toString() ?? '';
-          final resolved = await RakutenApi.fetchBookById(bookId);
-          return FavoriteRetentionCandidate(
-            book: resolved ?? _fallbackBook(bookId),
-            isSelected: row['is_selected'] == true,
-          );
-        }),
-      );
-      return books.where((candidate) => candidate.book.id.isNotEmpty).toList();
+      return rows
+          .map((row) {
+            final bookId = row['book_id']?.toString().trim() ?? '';
+            if (bookId.isEmpty) return null;
+            return FavoriteRetentionCandidate(
+              book: Book(
+                id: bookId,
+                title: row['book_title']?.toString().trim().isNotEmpty == true
+                    ? row['book_title'].toString().trim()
+                    : bookId,
+                author: row['book_author']?.toString() ?? '',
+                publisher: '',
+                pubDate: '',
+                isbn: bookId,
+                coverUrl: row['book_cover_url']?.toString() ?? '',
+                ratingAvg: 0,
+                genre: '',
+                description: '',
+              ),
+              isSelected: row['is_selected'] == true,
+            );
+          })
+          .whereType<FavoriteRetentionCandidate>()
+          .toList(growable: false);
     } catch (error) {
       debugLog('Error fetching favorite retention candidates: $error');
       return const [];
@@ -115,10 +127,8 @@ class FavoriteRetentionService {
   }
 
   /// Adds a favorite through the database's Premium-only compatibility RPC.
-  ///
-  /// The legacy Flutter favorite mutation still performs a finite client-side
-  /// precheck. This path is used only when that precheck reports a standard
-  /// limit while the database says the account is actually Premium/unlimited.
+  /// This remains useful for stale clients that still apply the historical
+  /// finite paid-plan precheck before calling the database.
   static Future<bool> addPremiumFavorite(String bookId) async {
     if (!isAuthenticated || bookId.trim().isEmpty) return false;
     try {
@@ -133,20 +143,5 @@ class FavoriteRetentionService {
       debugLog('Error adding Premium favorite: $error');
       return false;
     }
-  }
-
-  static Book _fallbackBook(String id) {
-    return Book(
-      id: id,
-      title: id,
-      author: '著者情報なし',
-      publisher: '',
-      pubDate: '',
-      isbn: id,
-      coverUrl: '',
-      ratingAvg: 0,
-      genre: '',
-      description: '書誌情報を取得できませんでした。',
-    );
   }
 }
