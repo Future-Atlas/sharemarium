@@ -51,6 +51,8 @@ test("staging deployment uploads Flutter output and API source instead of a prev
     "utf8",
   );
 
+  assert.match(workflow, /npm install --global vercel@59\.18\.0/);
+  assert.doesNotMatch(workflow, /vercel@58\.7\.1/);
   assert.match(workflow, /vercel deploy \. --force/);
   assert.doesNotMatch(workflow, /vercel deploy --prebuilt/);
   assert.doesNotMatch(workflow, /--prod/);
