@@ -293,7 +293,7 @@ DECLARE
     effective_plan TEXT;
     favorite_limit INTEGER;
     effective_visible_count INTEGER;
-    existing_is_visible BOOLEAN;
+    existing_row_exists BOOLEAN;
 BEGIN
     PERFORM pg_advisory_xact_lock(hashtext(NEW.profile_id::text)::bigint);
 
@@ -315,11 +315,12 @@ BEGIN
 
     favorite_limit := private.profile_favorite_limit(NEW.profile_id);
 
-    SELECT favorite.is_visible
-      INTO existing_is_visible
-      FROM public.favorites AS favorite
-     WHERE favorite.profile_id = NEW.profile_id
-       AND favorite.book_id = NEW.book_id;
+    SELECT EXISTS (
+        SELECT 1
+        FROM public.favorites AS favorite
+        WHERE favorite.profile_id = NEW.profile_id
+          AND favorite.book_id = NEW.book_id
+    ) INTO existing_row_exists;
 
     SELECT count(*)::INTEGER
       INTO effective_visible_count
@@ -338,7 +339,7 @@ BEGIN
 
     -- Re-favoriting a retained hidden book restores that row instead of
     -- violating the (profile_id, book_id) primary key.
-    IF FOUND THEN
+    IF existing_row_exists THEN
         UPDATE public.favorites
            SET is_visible = TRUE
          WHERE profile_id = NEW.profile_id
