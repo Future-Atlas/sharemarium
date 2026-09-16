@@ -47,6 +47,9 @@
           adClient;
 
         let adScriptLoaded = false;
+        let entitlementState = "unknown";
+        let entitlementToken = "";
+        let entitlementRequest = null;
 
         function normalizedPath() {
           return (window.location.pathname || "/").replace(/\/+$/, "") || "/";
@@ -54,6 +57,61 @@
 
         function isAdsRouteAllowed() {
           return allowedPath.test(normalizedPath());
+        }
+
+        function currentSupabaseAccessToken() {
+          try {
+            for (let i = 0; i < window.localStorage.length; i += 1) {
+              const key = window.localStorage.key(i) || "";
+              if (!key.startsWith("sb-") || !key.endsWith("-auth-token")) continue;
+              const raw = window.localStorage.getItem(key);
+              if (!raw) continue;
+              const parsed = JSON.parse(raw);
+              const token = parsed?.access_token || parsed?.currentSession?.access_token;
+              if (typeof token === "string" && token.length > 0) return token;
+            }
+          } catch (_) {
+            return "";
+          }
+          return "";
+        }
+
+        function refreshAdEntitlement() {
+          const token = currentSupabaseAccessToken();
+          if (!token) {
+            entitlementToken = "";
+            entitlementState = "ads_allowed";
+            entitlementRequest = null;
+            return Promise.resolve();
+          }
+          if (token === entitlementToken && entitlementState !== "unknown") {
+            return entitlementRequest || Promise.resolve();
+          }
+
+          entitlementToken = token;
+          entitlementState = "unknown";
+          entitlementRequest = fetch("/api/ad-entitlement", {
+            method: "GET",
+            headers: { Authorization: `Bearer ${token}` },
+            cache: "no-store",
+          })
+            .then((response) => {
+              if (!response.ok) throw new Error("entitlement_lookup_failed");
+              return response.json();
+            })
+            .then((body) => {
+              entitlementState = body?.adFree === true ? "ad_free" : "ads_allowed";
+            })
+            .catch(() => {
+              // Authenticated users fail closed: if entitlement cannot be
+              // verified, do not risk showing ads to a paid subscriber.
+              entitlementState = "ad_free";
+            })
+            .finally(() => {
+              entitlementRequest = null;
+              scheduleAdCheck();
+            });
+          return entitlementRequest;
         }
 
         function hasMeaningfulContent() {
@@ -66,6 +124,8 @@
         }
 
         function shouldLoadAds() {
+          const accessToken = currentSupabaseAccessToken();
+          if (accessToken && entitlementState !== "ads_allowed") return false;
           return (
             isAdsRouteAllowed() &&
             hasMeaningfulContent() &&
@@ -73,8 +133,9 @@
           );
         }
 
-        function reloadIfLeavingAdsRoute() {
-          if (!adScriptLoaded || isAdsRouteAllowed()) return false;
+        function reloadIfAdsAreNoLongerAllowed() {
+          if (!adScriptLoaded) return false;
+          if (isAdsRouteAllowed() && entitlementState !== "ad_free") return false;
           window.location.replace(window.location.href);
           return true;
         }
@@ -103,7 +164,8 @@
           }
           adCheckTimer = window.setTimeout(() => {
             adCheckTimer = 0;
-            if (reloadIfLeavingAdsRoute()) return;
+            void refreshAdEntitlement();
+            if (reloadIfAdsAreNoLongerAllowed()) return;
             if (loadAdsIfAllowed() && contentObserver) {
               contentObserver.disconnect();
               contentObserver = null;
@@ -123,6 +185,7 @@
 
         function checkAfterDomReady() {
           observeFlutterContent();
+          void refreshAdEntitlement();
           scheduleAdCheck();
           window.setTimeout(scheduleAdCheck, 1000);
           window.setTimeout(scheduleAdCheck, 3000);
@@ -139,6 +202,7 @@
         window.addEventListener("load", scheduleAdCheck, { passive: true });
         window.addEventListener("pageshow", scheduleAdCheck, { passive: true });
         window.addEventListener("popstate", scheduleAdCheck, { passive: true });
+        window.addEventListener("storage", scheduleAdCheck, { passive: true });
 
         const originalPushState = window.history.pushState;
         const originalReplaceState = window.history.replaceState;
