@@ -801,7 +801,8 @@ class _UserProfileScreenState extends State<UserProfileScreen>
       listen: false,
     ).toggleFavorite(bookId);
     if (!mounted) return;
-    if (result == FavoriteToggleResult.standardLimitReached) {
+    if (result == FavoriteToggleResult.standardLimitReached ||
+        result == FavoriteToggleResult.subscriberLimitReached) {
       final replaced = await showFavoriteReplacementDialog(
         context: context,
         targetBookId: bookId,
@@ -1450,7 +1451,9 @@ class _UserProfileScreenState extends State<UserProfileScreen>
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
           child: Text(
             _isOwnProfile
-                ? '${_favorites.length}冊/$_favoriteLimit冊'
+                ? _favoriteLimit >= SupabaseService.premiumFavoriteLimit
+                      ? '${_favorites.length}冊/無制限'
+                      : '${_favorites.length}冊/$_favoriteLimit冊'
                 : '${_favorites.length}冊',
             style: const TextStyle(
               color: Colors.black,

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../models/moderation_models.dart';
 import '../services/supabase_service.dart';
+import '../widgets/favorite_retention_gate.dart';
 import 'contact_screen.dart';
 
 class AccountSuspensionGate extends StatefulWidget {
@@ -18,6 +19,8 @@ class _AccountSuspensionGateState extends State<AccountSuspensionGate> {
   String? _checkedUserId;
   Future<AccountSuspensionStatus>? _statusFuture;
 
+  Widget _allowedContent() => FavoriteRetentionGate(child: widget.child);
+
   void _refresh(SupabaseService service) {
     setState(() {
       _statusFuture = service.fetchCurrentAccountSuspension();
@@ -31,7 +34,7 @@ class _AccountSuspensionGateState extends State<AccountSuspensionGate> {
         if (!service.isAuthenticated) {
           _checkedUserId = null;
           _statusFuture = null;
-          return widget.child;
+          return _allowedContent();
         }
 
         final userId = service.activeProfileId;
@@ -49,7 +52,9 @@ class _AccountSuspensionGateState extends State<AccountSuspensionGate> {
               );
             }
             final status = snapshot.data;
-            if (status == null || !status.isSuspended) return widget.child;
+            if (status == null || !status.isSuspended) {
+              return _allowedContent();
+            }
             return _SuspendedAccountScreen(
               status: status,
               onRefresh: () => _refresh(service),

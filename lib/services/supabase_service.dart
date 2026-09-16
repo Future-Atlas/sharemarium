@@ -75,6 +75,7 @@ class BookEngagementCounts {
 class SupabaseService extends ChangeNotifier {
   static const int standardFavoriteLimit = 3;
   static const int subscriberFavoriteLimit = 12;
+  static const int premiumFavoriteLimit = 2147483647;
 
   static final SupabaseService _instance = SupabaseService._internal();
   factory SupabaseService() => _instance;
@@ -1911,8 +1912,7 @@ class SupabaseService extends ChangeNotifier {
             .from('favorites')
             .select('book_id, created_at')
             .eq('profile_id', profileId)
-            .order('created_at', ascending: false)
-            .limit(12);
+            .order('created_at', ascending: false);
         final bookIds = (response as List<dynamic>)
             .map((row) => (row['book_id'] ?? '').toString().trim())
             .where((id) => id.isNotEmpty)
@@ -2978,15 +2978,17 @@ class SupabaseService extends ChangeNotifier {
             return FavoriteToggleResult.requiresRead;
           }
           favoriteLimit = await fetchCurrentFavoriteLimit();
-          final existingFavorites = await _client!
-              .from('favorites')
-              .select('book_id')
-              .eq('profile_id', profileId)
-              .limit(favoriteLimit);
-          if ((existingFavorites as List<dynamic>).length >= favoriteLimit) {
-            return favoriteLimit == subscriberFavoriteLimit
-                ? FavoriteToggleResult.subscriberLimitReached
-                : FavoriteToggleResult.standardLimitReached;
+          if (favoriteLimit < premiumFavoriteLimit) {
+            final existingFavorites = await _client!
+                .from('favorites')
+                .select('book_id')
+                .eq('profile_id', profileId)
+                .limit(favoriteLimit);
+            if ((existingFavorites as List<dynamic>).length >= favoriteLimit) {
+              return favoriteLimit == subscriberFavoriteLimit
+                  ? FavoriteToggleResult.subscriberLimitReached
+                  : FavoriteToggleResult.standardLimitReached;
+            }
           }
           await _client!.from('favorites').insert({
             'profile_id': profileId,
@@ -3048,9 +3050,9 @@ class SupabaseService extends ChangeNotifier {
       final parsed = response is num
           ? response.toInt()
           : int.tryParse(response?.toString() ?? '');
-      return parsed == subscriberFavoriteLimit
-          ? subscriberFavoriteLimit
-          : standardFavoriteLimit;
+      if (parsed == premiumFavoriteLimit) return premiumFavoriteLimit;
+      if (parsed == subscriberFavoriteLimit) return subscriberFavoriteLimit;
+      return standardFavoriteLimit;
     } catch (e) {
       debugPrint('Error fetching favorite limit from Supabase: $e');
       return standardFavoriteLimit;
