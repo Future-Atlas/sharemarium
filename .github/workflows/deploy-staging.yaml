@@ -47,15 +47,20 @@ jobs:
       - name: Pull Vercel Environment Information (Preview)
         run: vercel pull --yes --environment=preview --scope="$VERCEL_SCOPE" --token="$VERCEL_TOKEN"
 
-      - name: Build Vercel Prebuilt Output (Preview)
-        run: vercel build --scope="$VERCEL_SCOPE" --token="$VERCEL_TOKEN"
+      - name: Verify Flutter build output
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s build/web/index.html
+          test -s build/web/flutter_bootstrap.js
+          echo "Flutter build output: $(du -sh build/web | cut -f1)"
 
       - name: Deploy to Vercel Preview
         id: deploy_preview
         shell: bash
         run: |
           set -euo pipefail
-          deployment_url="$(vercel deploy --prebuilt --scope="$VERCEL_SCOPE" --token="$VERCEL_TOKEN")"
+          deployment_url="$(vercel deploy . --target=preview --force --scope="$VERCEL_SCOPE" --token="$VERCEL_TOKEN")"
           deployment_url="$(printf '%s\n' "$deployment_url" | tail -n 1 | tr -d '\r')"
           if [[ ! "$deployment_url" =~ ^https:// ]]; then
             echo "::error::Could not determine preview deployment URL: $deployment_url"
@@ -66,7 +71,5 @@ jobs:
 
       - name: Smoke test staging preview
         env:
-          SMOKE_BASE_URL: ${{ steps.deploy_preview.outputs.url }}
-          SMOKE_PROFILE: staging
-          SMOKE_BYPASS_TOKEN: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
-        run: node scripts/production-smoke.mjs
+          DEPLOYMENT_URL: ${{ steps.deploy_preview.outputs.url }}
+        run: bash scripts/staging-smoke.sh
