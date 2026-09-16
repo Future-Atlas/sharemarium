@@ -1,4 +1,5 @@
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const test = require("node:test");
@@ -37,4 +38,44 @@ test("unknown smoke profiles fail closed", async () => {
     () => smokeChecksForProfile("unknown"),
     /Unsupported SMOKE_PROFILE: unknown/,
   );
+});
+
+test("staging deployment uploads Flutter output and API source instead of a preview prebuild", () => {
+  const root = path.resolve(__dirname, "../..");
+  const workflow = fs.readFileSync(
+    path.join(root, ".github/workflows/deploy-staging.yaml"),
+    "utf8",
+  );
+  const vercelIgnore = fs.readFileSync(
+    path.join(root, ".vercelignore"),
+    "utf8",
+  );
+
+  assert.match(workflow, /vercel deploy \. --force/);
+  assert.doesNotMatch(workflow, /vercel deploy --prebuilt/);
+  assert.doesNotMatch(workflow, /--prod/);
+  assert.match(workflow, /test -s build\/web\/flutter_bootstrap\.js/);
+  assert.match(workflow, /vercel deploy \. --dry --format=json/);
+  assert.match(workflow, /grep -q 'build\/web\/flutter_bootstrap\.js'/);
+  assert.match(workflow, /grep -q 'api\/home-ad-eligibility\.js'/);
+  assert.match(workflow, /bash scripts\/staging-smoke\.sh/);
+
+  assert.match(vercelIgnore, /^\/\*/m);
+  assert.match(vercelIgnore, /^!api$/m);
+  assert.match(vercelIgnore, /^!build$/m);
+  assert.match(vercelIgnore, /^!lib$/m);
+  assert.match(vercelIgnore, /^!vercel\.json$/m);
+});
+
+test("staging smoke script uses authenticated Vercel curl for protected previews", () => {
+  const script = fs.readFileSync(
+    path.resolve(__dirname, "../../scripts/staging-smoke.sh"),
+    "utf8",
+  );
+
+  assert.match(script, /vercel curl "\$\{base_url\}\$\{path\}"/);
+  assert.match(script, /--scope "\$VERCEL_SCOPE"/);
+  assert.match(script, /--token "\$VERCEL_TOKEN"/);
+  assert.match(script, /\/flutter_bootstrap\.js/);
+  assert.match(script, /\/api\/home-ad-eligibility/);
 });
