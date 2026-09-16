@@ -54,6 +54,9 @@ test("staging deployment uploads Flutter output and API source instead of a prev
   assert.match(workflow, /vercel deploy \. --target=preview --force/);
   assert.doesNotMatch(workflow, /vercel deploy --prebuilt/);
   assert.match(workflow, /test -s build\/web\/flutter_bootstrap\.js/);
+  assert.match(workflow, /vercel deploy \. --target=preview --dry --format=json/);
+  assert.match(workflow, /grep -q 'build\/web\/flutter_bootstrap\.js'/);
+  assert.match(workflow, /grep -q 'api\/home-ad-eligibility\.js'/);
   assert.match(workflow, /bash scripts\/staging-smoke\.sh/);
 
   assert.match(vercelIgnore, /^\/\*/m);
@@ -69,8 +72,9 @@ test("staging smoke script uses authenticated Vercel curl for protected previews
     "utf8",
   );
 
-  assert.match(script, /vercel curl/);
-  assert.match(script, /--deployment "\$DEPLOYMENT_URL"/);
+  assert.match(script, /vercel curl "\$\{base_url\}\$\{path\}"/);
+  assert.match(script, /--scope "\$VERCEL_SCOPE"/);
+  assert.match(script, /--token "\$VERCEL_TOKEN"/);
   assert.match(script, /\/flutter_bootstrap\.js/);
   assert.match(script, /\/api\/home-ad-eligibility/);
 });
