@@ -1,7 +1,8 @@
 -- Avoid one external book API request per retained favorite when a downgraded
 -- user opens the selection dialog. Favorites can only be created for books the
--- user has posted about, so reuse the latest stored post metadata in the
--- owner-only management RPC.
+-- user has posted about, so reuse the title/author metadata stored on the
+-- latest post in the owner-only management RPC. The posts table does not store
+-- a cover URL, so the client intentionally renders its local placeholder.
 DROP FUNCTION IF EXISTS public.current_user_favorite_retention_candidates();
 
 CREATE FUNCTION public.current_user_favorite_retention_candidates()
@@ -10,8 +11,7 @@ RETURNS TABLE (
     created_at TIMESTAMP WITH TIME ZONE,
     is_selected BOOLEAN,
     book_title TEXT,
-    book_author TEXT,
-    book_cover_url TEXT
+    book_author TEXT
 )
 LANGUAGE sql
 STABLE
@@ -26,14 +26,12 @@ AS $$
             favorite.book_id
         ) AS is_selected,
         coalesce(latest_post.book_title, favorite.book_id) AS book_title,
-        coalesce(latest_post.book_author, '') AS book_author,
-        coalesce(latest_post.book_cover_url, '') AS book_cover_url
+        coalesce(latest_post.book_author, '') AS book_author
     FROM public.favorites AS favorite
     LEFT JOIN LATERAL (
         SELECT
             post.book_title,
-            post.book_author,
-            post.book_cover_url
+            post.book_author
         FROM public.posts AS post
         WHERE post.profile_id = favorite.profile_id
           AND post.book_id = favorite.book_id
@@ -51,4 +49,4 @@ GRANT EXECUTE ON FUNCTION public.current_user_favorite_retention_candidates()
     TO authenticated;
 
 COMMENT ON FUNCTION public.current_user_favorite_retention_candidates() IS
-    'Returns every retained favorite for auth.uid(), including hidden rows and local post metadata, for the downgrade selection flow.';
+    'Returns every retained favorite for auth.uid(), including hidden rows and local post title/author metadata, for the downgrade selection flow.';
