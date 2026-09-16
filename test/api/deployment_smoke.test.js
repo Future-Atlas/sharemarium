@@ -51,10 +51,11 @@ test("staging deployment uploads Flutter output and API source instead of a prev
     "utf8",
   );
 
-  assert.match(workflow, /vercel deploy \. --target=preview --force/);
+  assert.match(workflow, /vercel deploy \. --force/);
   assert.doesNotMatch(workflow, /vercel deploy --prebuilt/);
+  assert.doesNotMatch(workflow, /--prod/);
   assert.match(workflow, /test -s build\/web\/flutter_bootstrap\.js/);
-  assert.match(workflow, /vercel deploy \. --target=preview --dry --format=json/);
+  assert.match(workflow, /vercel deploy \. --dry --format=json/);
   assert.match(workflow, /grep -q 'build\/web\/flutter_bootstrap\.js'/);
   assert.match(workflow, /grep -q 'api\/home-ad-eligibility\.js'/);
   assert.match(workflow, /bash scripts\/staging-smoke\.sh/);
