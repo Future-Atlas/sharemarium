@@ -53,6 +53,8 @@ test("staging deployment uploads Flutter output and API source instead of a prev
 
   assert.match(workflow, /npm install --global vercel@59\.18\.0/);
   assert.doesNotMatch(workflow, /vercel@58\.7\.1/);
+  assert.match(workflow, /VERCEL_TOKEN: \$\{\{ secrets\.VERCEL_TOKEN \}\}/);
+  assert.doesNotMatch(workflow, /--token/);
   assert.match(workflow, /vercel deploy \. --force/);
   assert.doesNotMatch(workflow, /vercel deploy --prebuilt/);
   assert.doesNotMatch(workflow, /--prod/);
@@ -69,29 +71,25 @@ test("staging deployment uploads Flutter output and API source instead of a prev
   assert.match(vercelIgnore, /^!vercel\.json$/m);
 });
 
-test("staging smoke script places Vercel global options before native curl arguments", () => {
+test("staging smoke uses Vercel env auth with the full preview URL", () => {
   const script = fs.readFileSync(
     path.resolve(__dirname, "../../scripts/staging-smoke.sh"),
     "utf8",
   );
 
-  const scopeIndex = script.indexOf('--scope "$VERCEL_SCOPE"');
-  const tokenIndex = script.indexOf('--token "$VERCEL_TOKEN"');
-  const curlIndex = script.indexOf('curl "$path"');
-  const deploymentIndex = script.indexOf('--deployment "$DEPLOYMENT_URL"');
-  const nativeCurlIndex = script.indexOf("--fail");
-
-  assert.ok(scopeIndex >= 0);
-  assert.ok(tokenIndex > scopeIndex);
-  assert.ok(curlIndex > tokenIndex);
-  assert.ok(deploymentIndex > curlIndex);
-  assert.ok(nativeCurlIndex > deploymentIndex);
-
+  assert.match(script, /VERCEL_TOKEN:\?VERCEL_TOKEN is required/);
+  assert.match(script, /base_url="\$\{DEPLOYMENT_URL%\/\}"/);
+  assert.match(script, /local url="\$\{base_url\}\$\{path\}"/);
+  assert.match(script, /vercel curl "\$url"/);
+  assert.match(script, /--location/);
+  assert.match(script, /--fail/);
   assert.match(script, /--silent/);
   assert.match(script, /--show-error/);
   assert.match(script, /--dump-header "\$headers"/);
   assert.match(script, /--output "\$body"/);
-  assert.doesNotMatch(script, /-fsS/);
+  assert.doesNotMatch(script, /--token/);
+  assert.doesNotMatch(script, /--scope/);
+  assert.doesNotMatch(script, /--deployment/);
   assert.match(script, /\/flutter_bootstrap\.js/);
   assert.match(script, /\/api\/home-ad-eligibility/);
 });
