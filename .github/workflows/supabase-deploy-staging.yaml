@@ -1,0 +1,107 @@
+name: Deploy Database to Supabase (Staging)
+
+on:
+  push:
+    branches:
+      - develop
+    paths:
+      - "supabase/**"
+      - "scripts/deploy-staging-db.mjs"
+      - "test/deployment/**"
+      - ".github/workflows/supabase-deploy-staging.yaml"
+  workflow_dispatch:
+    inputs:
+      apply_changes:
+        description: "Apply migrations and deploy functions to staging (false = plan only)"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supabase-staging-wpoigmywpewrrbudqhgh
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  validate:
+    if: github.repository == 'Future-Atlas/sharemarium' && github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # No cloud credentials in this job: reset/test only the runner's local DB.
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Test deployment safety checks
+        run: node --test test/deployment/staging-db.test.mjs
+
+      - name: Check migration filenames and required files
+        run: node scripts/deploy-staging-db.mjs check
+
+      - name: Setup Supabase CLI
+        id: setup_supabase
+        uses: supabase/setup-cli@v3
+        with:
+          version: "2.115.0"
+
+      - name: Build a disposable local database
+        run: supabase start
+
+      - name: Replay all migrations locally
+        run: supabase db reset --local --yes
+
+      - name: Test database access policies
+        run: supabase test db --local
+
+      - name: Stop disposable database
+        if: always() && steps.setup_supabase.outcome == 'success'
+        run: supabase stop --no-backup
+
+  deploy:
+    needs: validate
+    if: github.repository == 'Future-Atlas/sharemarium' && github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: staging
+    env:
+      SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Check staging target and credentials before connecting
+        run: node scripts/deploy-staging-db.mjs guard
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v3
+        with:
+          version: "2.115.0"
+
+      - name: Plan then apply to staging only
+        env:
+          DEPLOY_MODE: ${{ (github.event_name == 'push' || inputs.apply_changes) && 'apply' || 'plan' }}
+        run: node scripts/deploy-staging-db.mjs "$DEPLOY_MODE"
+
+      - name: Record result without credentials
+        env:
+          DEPLOY_MODE: ${{ (github.event_name == 'push' || inputs.apply_changes) && 'apply' || 'plan' }}
+        run: |
+          printf '### Supabase staging\n\nProject: `wpoigmywpewrrbudqhgh`\n\nMode: `%s`\n\nCommit: `%s`\n' "$DEPLOY_MODE" "$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$DEPLOY_MODE" == "plan" ]]; then
+            printf '\nPlan only: no migrations or functions were deployed.\n' >> "$GITHUB_STEP_SUMMARY"
+          else
+            printf '\nMigrations and all three Edge Functions deployed successfully. Production was not targeted.\n' >> "$GITHUB_STEP_SUMMARY"
+          fi

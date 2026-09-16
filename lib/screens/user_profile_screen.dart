@@ -11,6 +11,9 @@ import '../widgets/post_card.dart';
 import '../widgets/book_card.dart';
 import '../widgets/post_composer_dialog.dart';
 import '../widgets/post_reply_dialog.dart';
+import '../widgets/favorite_replacement_dialog.dart';
+import '../widgets/book_action_label.dart';
+import '../widgets/amazon_book_link.dart';
 import 'profile_book_search_screen.dart';
 import 'report_post_dialog.dart';
 import 'follow_list_screen.dart';
@@ -117,7 +120,20 @@ class _ProfileBookPostsPanelState extends State<_ProfileBookPostsPanel> {
           ),
           sourcePostId: post.id,
         );
-    if (!mounted || !result.shouldRestoreOptimisticState) return;
+    if (!mounted) return;
+    if (result == WantToReadToggleResult.subscriptionRequired) {
+      setState(() {
+        final updated = List<Post>.from(_posts);
+        updated[index] = post;
+        _posts = updated;
+      });
+      await showSubscriptionLockedDialog(
+        context: context,
+        featureLabel: '「読みたい！」',
+      );
+      return;
+    }
+    if (!result.shouldRestoreOptimisticState) return;
     setState(() {
       final updated = List<Post>.from(_posts);
       updated[index] = post;
@@ -648,6 +664,20 @@ class _UserProfileScreenState extends State<UserProfileScreen>
     );
     _pendingReactionPostIds.remove(pendingKey);
     if (!mounted) return;
+    if (result == WantToReadToggleResult.subscriptionRequired) {
+      if (previous != null) {
+        setState(() {
+          final updated = List<Post>.from(_userPosts);
+          updated[index] = previous;
+          _userPosts = updated;
+        });
+      }
+      await showSubscriptionLockedDialog(
+        context: context,
+        featureLabel: '「読みたい！」',
+      );
+      return;
+    }
     if (result.shouldRestoreOptimisticState && previous != null) {
       setState(() {
         final restoreIndex = _userPosts.indexWhere((p) => p.id == previous.id);
@@ -764,13 +794,26 @@ class _UserProfileScreenState extends State<UserProfileScreen>
   bool _isFavorited(String bookId) =>
       _favorites.any((book) => book.id == bookId);
 
-  Future<void> _toggleFavorite(String bookId) async {
+  Future<void> _toggleFavorite(String bookId, String bookTitle) async {
     if (!_isOwnProfile) return;
     final result = await Provider.of<SupabaseService>(
       context,
       listen: false,
     ).toggleFavorite(bookId);
     if (!mounted) return;
+    if (result == FavoriteToggleResult.standardLimitReached) {
+      final replaced = await showFavoriteReplacementDialog(
+        context: context,
+        targetBookId: bookId,
+        targetBookTitle: bookTitle,
+      );
+      if (!mounted || !replaced) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('お気に入りを入れ替えました。')));
+      await _loadProfileData();
+      return;
+    }
     _showFavoriteResult(result);
     if (result == FavoriteToggleResult.added ||
         result == FavoriteToggleResult.removed) {
@@ -1324,7 +1367,9 @@ class _UserProfileScreenState extends State<UserProfileScreen>
           onWantToReadUsers: () => _openEngagementUsers(post, wantToRead: true),
           onDelete: _isOwnProfile ? () => _deletePost(post) : null,
           onEdit: _isOwnProfile ? () => _editPost(post) : null,
-          onFavorite: _isOwnProfile ? () => _toggleFavorite(post.bookId) : null,
+          onFavorite: _isOwnProfile
+              ? () => _toggleFavorite(post.bookId, post.bookTitle)
+              : null,
           favoriteLabel: _isFavorited(post.bookId) ? 'お気に入りから解除' : 'お気に入りに追加',
           onReport: _isOwnProfile ? null : () => _reportPost(post.id),
           onReply: (parentReply) => _replyToPost(post, parentReply),
@@ -1690,7 +1735,14 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                             onPressed: isRead
                                 ? null
                                 : () => _showSearchedBookDetailDialog(book),
-                            child: Text(isRead ? '読了済み' : '読了'),
+                            child: BookActionLabel(
+                              bookId: book.id,
+                              label: isRead ? '読了済み' : '読了',
+                              color: isRead
+                                  ? const Color(0xFF00BFFF)
+                                  : const Color(0xFFFF1F1F),
+                              wantToRead: false,
+                            ),
                           ),
                         );
                       },
@@ -1836,7 +1888,14 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                                       0xFF00BFFF,
                                     ),
                                   ),
-                                  child: Text(isRead ? '読了済み' : '読了'),
+                                  child: BookActionLabel(
+                                    bookId: book.id,
+                                    label: isRead ? '読了済み' : '読了',
+                                    color: isRead
+                                        ? const Color(0xFF00BFFF)
+                                        : const Color(0xFFFF1F1F),
+                                    wantToRead: false,
+                                  ),
                                 ),
                               ),
                               const SizedBox(width: 10),
@@ -1855,6 +1914,15 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                                               final result = await service
                                                   .toggleWantToRead(book: book);
                                               if (!mounted) return;
+                                              if (result ==
+                                                  WantToReadToggleResult
+                                                      .subscriptionRequired) {
+                                                await showSubscriptionLockedDialog(
+                                                  context: this.context,
+                                                  featureLabel: '「読みたい！」',
+                                                );
+                                                return;
+                                              }
                                               ScaffoldMessenger.of(
                                                 this.context,
                                               ).showSnackBar(
@@ -1874,7 +1942,12 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                                         backgroundColor: Colors.black,
                                         foregroundColor: Colors.amber,
                                       ),
-                                      child: Text(wanted ? '読みたい！済み' : '読みたい！'),
+                                      child: BookActionLabel(
+                                        bookId: book.id,
+                                        label: wanted ? '読みたい！済み' : '読みたい！',
+                                        color: Colors.amber,
+                                        wantToRead: true,
+                                      ),
                                     );
                                   },
                                 ),
@@ -1883,6 +1956,10 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                           );
                         },
                       ),
+                      if (AmazonBookLink.isConfigured) ...[
+                        const SizedBox(height: 12),
+                        AmazonBookLink(book: book),
+                      ],
                       const SizedBox(height: 14),
                       Container(
                         padding: const EdgeInsets.all(12),

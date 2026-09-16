@@ -134,6 +134,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           sourcePostId: post.id,
         );
     if (!mounted) return;
+    if (result == WantToReadToggleResult.subscriptionRequired) {
+      setState(() => _post = post);
+      await showSubscriptionLockedDialog(
+        context: context,
+        featureLabel: '「読みたい！」',
+      );
+      return;
+    }
     if (result.shouldRestoreOptimisticState) {
       setState(() => _post = post);
       ScaffoldMessenger.of(

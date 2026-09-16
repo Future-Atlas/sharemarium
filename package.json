@@ -3,7 +3,7 @@
     "test:api": "node --test test/api/*.test.js"
   },
   "devDependencies": {
-    "supabase": "2.116.0"
+    "supabase": "2.117.0"
   },
   "dependencies": {
     "@vercel/speed-insights": "^2.0.0"

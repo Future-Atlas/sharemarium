@@ -52,6 +52,7 @@ class ProfileRelationship {
 enum SocialNotificationType {
   reaction,
   wantToRead,
+  wantToReadCompleted,
   reply,
   follow,
   followRequest,

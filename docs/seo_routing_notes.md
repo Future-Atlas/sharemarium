@@ -1,32 +1,78 @@
 # SEO URL / app route consistency notes
 
-This project intentionally serves crawler-friendly pages for the following public routes:
+Sharemarium uses Flutter for the human-facing web app and Vercel Serverless
+Functions for crawler-friendly HTML where static metadata/indexable content is
+needed.
+
+## Canonical public route families
+
+The general crawler-aware routes include:
 
 - `/`
-- `/book/{slug}`
+- `/book/{id}`
 - `/genre/{genre}`
 - `/users/{id}`
-- `/posts` and `/posts/{post-id}` (crawler-only SSR)
+- public legal/information pages
 
-The Flutter app keeps the same route semantics on the client side so that a human opening the URL sees the same content intent as the crawler page. The app shell maps:
+`/users/{id}` is the canonical public profile family. Legacy `/user/{id}` and
+`/profile/{id}` routes redirect to `/users/{id}`.
 
-- `/book/*` and `/genre/*` to the home screen content area
-- `/users/*`, `/user/*`, and `/profile/*` to the profile screen
-- `/posts` to the Flutter post index and `/posts/{post-id}` to the existing
-  Flutter post detail screen, including the usual account gates
+The Flutter app keeps compatible route semantics so a human opening a canonical
+URL sees the same content intent as the crawler representation.
 
-The post SSR rewrites require a crawler User-Agent, just like the other public
-SEO routes. Ordinary browsers fall through to the Flutter app. The post index
-conceals spoiler text and uses the existing viewer privacy/age/block filters.
+## Public posts: active human/crawler split
 
-After deploying, use an authenticated Vercel Preview browser session to inspect
-`https://staging.sharemarium.com/posts`: with a Googlebot User-Agent, expect
-HTTP 200 and `X-Posts-Diagnostics: ok`, and check that the HTML shows the staging
-test post rather than production posts. With the browser default User-Agent,
-expect the Flutter post index and a working link to its post detail screen.
-Keep Preview deployment protection enabled. A redirected Vercel login page with
-HTTP 200 is not a successful SSR check.
+Public post URLs intentionally use different renderers for the same public
+resource:
 
-This avoids a mismatch where the crawler page exists but the app falls back to the default landing screen for the same URL.
+```text
+crawler -> SSR
+human   -> Flutter
+```
 
-The SEO edge function still guards private, suspended, and missing profiles by returning noindex or 404 responses instead of exposing data that should not be public.
+`vercel.json` applies the post SSR rewrites only when the request User-Agent
+matches a supported crawler:
+
+- crawler `/posts` -> `/api/posts-seo`
+- crawler `/posts/{postId}` -> `/api/post-seo?post_id={postId}`
+
+Ordinary browser requests fall through to the Flutter SPA:
+
+- human `/posts` -> Flutter public post index
+- human `/posts/{postId}` -> Flutter post detail
+
+The Flutter post routes retain the normal account gates and the existing privacy,
+age, blocking, and spoiler behavior. SSR and Flutter must represent the same
+public data; this split is an alternate rendering strategy rather than separate
+content.
+
+The crawler SSR functions read `SUPABASE_URL` and `SUPABASE_ANON_KEY` from the
+Vercel Serverless runtime. Those values are separate from the Supabase values
+passed to Flutter with `--dart-define` during GitHub Actions builds. Configure
+them independently for Production and Preview/Staging.
+
+## Verification
+
+For staging, inspect `https://staging.sharemarium.com/posts` with both request
+types:
+
+- default browser User-Agent: expect the Flutter post index and working post detail navigation
+- crawler User-Agent such as Googlebot: expect SSR HTML, HTTP 200, and a healthy `X-Posts-Diagnostics` value
+
+When Preview deployment protection is enabled, use an authenticated Vercel
+Preview session for browser verification. A Vercel login page that happens to
+return HTTP 200 is not a successful SSR/content check.
+
+Production uses the same human/crawler routing model on the canonical Sharemarium
+domain.
+
+## Indexing boundaries
+
+Crawler rendering and sitemap generation must not expose content that is not
+publicly indexable. In particular, private, suspended, deleted, missing, empty,
+or otherwise restricted content should return an appropriate 404/noindex result
+or be omitted from the sitemap.
+
+Crawler HTML and the Flutter page for the same canonical URL should describe the
+same public resource. SSR exists to make that resource understandable to
+crawlers, not to create a separate content model.

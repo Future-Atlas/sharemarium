@@ -10,6 +10,9 @@ import '../models/social_models.dart';
 import '../services/supabase_service.dart';
 import '../widgets/post_composer_dialog.dart';
 import '../widgets/post_reply_dialog.dart';
+import '../widgets/favorite_replacement_dialog.dart';
+import '../widgets/book_action_label.dart';
+import '../widgets/amazon_book_link.dart';
 import 'report_post_dialog.dart';
 import 'user_profile_screen.dart';
 import 'post_engagement_users_screen.dart';
@@ -140,6 +143,14 @@ class _BookListScreenState extends State<BookListScreen> {
     );
     _pendingReactionPostIds.remove('want:${post.id}');
     if (!mounted) return;
+    if (result == WantToReadToggleResult.subscriptionRequired) {
+      if (previous != null) _controller.restoreTimelinePost(previous);
+      await showSubscriptionLockedDialog(
+        context: context,
+        featureLabel: '「読みたい！」',
+      );
+      return;
+    }
     if (result.shouldRestoreOptimisticState && previous != null) {
       _controller.restoreTimelinePost(previous);
       ScaffoldMessenger.of(
@@ -220,10 +231,35 @@ class _BookListScreenState extends State<BookListScreen> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
+  Future<bool> _replaceFavoriteAtLimit({
+    required String targetBookId,
+    required String targetBookTitle,
+  }) async {
+    final replaced = await showFavoriteReplacementDialog(
+      context: context,
+      targetBookId: targetBookId,
+      targetBookTitle: targetBookTitle,
+    );
+    if (!mounted || !replaced) return false;
+    await _controller.loadData(context);
+    if (!mounted) return false;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('お気に入りを入れ替えました。')));
+    return true;
+  }
+
   Future<void> _toggleFavoriteFromPost(Post post) async {
     final service = Provider.of<SupabaseService>(context, listen: false);
     final result = await service.toggleFavorite(post.bookId);
     if (!mounted) return;
+    if (result == FavoriteToggleResult.standardLimitReached) {
+      await _replaceFavoriteAtLimit(
+        targetBookId: post.bookId,
+        targetBookTitle: post.bookTitle,
+      );
+      return;
+    }
     _showFavoriteResult(result);
   }
 
@@ -387,10 +423,15 @@ class _BookListScreenState extends State<BookListScreen> {
                                             ),
                                           ),
                                         ),
-                                        child: Text(
-                                          isRead ? '読了済み' : '読了',
+                                        child: BookActionLabel(
+                                          bookId: book.id,
+                                          label: isRead ? '読了済み' : '読了',
+                                          color: isRead
+                                              ? const Color(0xFF00BFFF)
+                                              : const Color(0xFFFF1F1F),
+                                          wantToRead: false,
                                           style: const TextStyle(
-                                            fontSize: 52 / 2,
+                                            fontSize: 26,
                                             fontWeight: FontWeight.bold,
                                           ),
                                         ),
@@ -422,6 +463,15 @@ class _BookListScreenState extends State<BookListScreen> {
                                                           book: book,
                                                         );
                                                     if (!mounted) return;
+                                                    if (result ==
+                                                        WantToReadToggleResult
+                                                            .subscriptionRequired) {
+                                                      await showSubscriptionLockedDialog(
+                                                        context: this.context,
+                                                        featureLabel: '「読みたい！」',
+                                                      );
+                                                      return;
+                                                    }
                                                     if (context.mounted &&
                                                         !result
                                                             .shouldRestoreOptimisticState) {
@@ -451,9 +501,13 @@ class _BookListScreenState extends State<BookListScreen> {
                                                     BorderRadius.circular(18),
                                               ),
                                             ),
-                                            child: Text(
-                                              wanted ? '読みたい！済み' : '読みたい！',
-                                              textAlign: TextAlign.center,
+                                            child: BookActionLabel(
+                                              bookId: book.id,
+                                              label: wanted
+                                                  ? '読みたい！済み'
+                                                  : '読みたい！',
+                                              color: Colors.amber,
+                                              wantToRead: true,
                                               style: const TextStyle(
                                                 fontSize: 18,
                                                 fontWeight: FontWeight.bold,
@@ -497,6 +551,19 @@ class _BookListScreenState extends State<BookListScreen> {
                                           final result = await service
                                               .toggleFavorite(book.id);
                                           if (!mounted) return;
+                                          if (result ==
+                                              FavoriteToggleResult
+                                                  .standardLimitReached) {
+                                            final replaced =
+                                                await _replaceFavoriteAtLimit(
+                                                  targetBookId: book.id,
+                                                  targetBookTitle: book.title,
+                                                );
+                                            if (replaced && context.mounted) {
+                                              Navigator.of(context).pop();
+                                            }
+                                            return;
+                                          }
                                           if (context.mounted &&
                                               (result ==
                                                       FavoriteToggleResult
@@ -521,6 +588,10 @@ class _BookListScreenState extends State<BookListScreen> {
                               );
                             },
                           ),
+                          if (AmazonBookLink.isConfigured) ...[
+                            const SizedBox(height: 12),
+                            AmazonBookLink(book: book),
+                          ],
                           const SizedBox(height: 14),
                           Row(
                             children: [
@@ -1389,6 +1460,14 @@ class _BookListScreenState extends State<BookListScreen> {
             'Powered by Supabase & PostgreSQL',
             style: TextStyle(color: Colors.grey[400], fontSize: 9),
           ),
+          if (AmazonBookLink.isConfigured) ...[
+            const SizedBox(height: 4),
+            Text(
+              'Amazon のアソシエイトとして、Sharemarium は適格販売により収入を得ています。',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey[400], fontSize: 9),
+            ),
+          ],
           const SizedBox(height: 12),
           Wrap(
             alignment: WrapAlignment.center,
@@ -1514,6 +1593,18 @@ class _BookPostsPanelState extends State<_BookPostsPanel> {
       sourcePostId: post.id,
     );
     if (!mounted) return;
+    if (result == WantToReadToggleResult.subscriptionRequired) {
+      setState(() {
+        final current = List<Post>.from(_posts);
+        current[index] = post;
+        _posts = current;
+      });
+      await showSubscriptionLockedDialog(
+        context: context,
+        featureLabel: '「読みたい！」',
+      );
+      return;
+    }
     if (result.shouldRestoreOptimisticState) {
       setState(() {
         final current = List<Post>.from(_posts);

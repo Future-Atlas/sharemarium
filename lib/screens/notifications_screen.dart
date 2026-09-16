@@ -172,6 +172,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     if ((notification.type == SocialNotificationType.reply ||
             notification.type == SocialNotificationType.reaction ||
             notification.type == SocialNotificationType.wantToRead ||
+            notification.type == SocialNotificationType.wantToReadCompleted ||
             notification.type == SocialNotificationType.newPost) &&
         notification.postId != null) {
       await Navigator.of(context).push(
@@ -202,6 +203,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         return '$actorがあなたの『$bookTitle』の投稿にリアクションしました';
       case SocialNotificationType.wantToRead:
         return '$actorがあなたの『$bookTitle』の投稿を「読みたい！」しました';
+      case SocialNotificationType.wantToReadCompleted:
+        return '$actorが『$bookTitle』を読了しました';
       case SocialNotificationType.reply:
         return '$actorがあなたの『$bookTitle』の投稿に返信しました';
       case SocialNotificationType.follow:

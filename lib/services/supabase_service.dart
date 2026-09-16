@@ -32,11 +32,18 @@ enum FavoriteToggleResult {
   failed,
 }
 
-enum WantToReadToggleResult { added, removed, alreadyRead, failed }
+enum WantToReadToggleResult {
+  added,
+  removed,
+  alreadyRead,
+  subscriptionRequired,
+  failed,
+}
 
 extension WantToReadToggleResultLabel on WantToReadToggleResult {
   bool get shouldRestoreOptimisticState =>
       this == WantToReadToggleResult.alreadyRead ||
+      this == WantToReadToggleResult.subscriptionRequired ||
       this == WantToReadToggleResult.failed;
 
   String get message {
@@ -47,10 +54,22 @@ extension WantToReadToggleResultLabel on WantToReadToggleResult {
         return '「読みたい！」から解除しました。';
       case WantToReadToggleResult.alreadyRead:
         return 'この本はすでに読了済みです。';
+      case WantToReadToggleResult.subscriptionRequired:
+        return '「読みたい！」は限定コンテンツです。';
       case WantToReadToggleResult.failed:
         return '「読みたい！」を更新できませんでした。';
     }
   }
+}
+
+class BookEngagementCounts {
+  const BookEngagementCounts({
+    required this.readCount,
+    required this.wantToReadCount,
+  });
+
+  final int readCount;
+  final int wantToReadCount;
 }
 
 class SupabaseService extends ChangeNotifier {
@@ -71,6 +90,7 @@ class SupabaseService extends ChangeNotifier {
   String? _cachedRegistrationUserId;
   String _activePageColorKey = ProfilePageColors.defaultKey;
   Timer? _sessionGuardTimer;
+  Future<bool>? _canUseWantToReadFuture;
 
   // ----- Initialization ----------------------------------------------------
   Future<void> initialize({
@@ -94,6 +114,7 @@ class SupabaseService extends ChangeNotifier {
         _authStateSubscription?.cancel();
         _authStateSubscription = _client!.auth.onAuthStateChange.listen((evt) {
           final user = evt.session?.user;
+          _canUseWantToReadFuture = null;
           if (_cachedConsentUserId != user?.id) {
             _cachedConsentUserId = user?.id;
             _hasCurrentLegalConsentCache = null;
@@ -1340,6 +1361,8 @@ class SupabaseService extends ChangeNotifier {
         final type = switch (rawType) {
           'reaction' => SocialNotificationType.reaction,
           'want_to_read' => SocialNotificationType.wantToRead,
+          'want_to_read_completed' =>
+            SocialNotificationType.wantToReadCompleted,
           'reply' => SocialNotificationType.reply,
           'follow_request' => SocialNotificationType.followRequest,
           'new_post' => SocialNotificationType.newPost,
@@ -2295,12 +2318,51 @@ class SupabaseService extends ChangeNotifier {
           return WantToReadToggleResult.removed;
         case 'already_read':
           return WantToReadToggleResult.alreadyRead;
+        case 'subscription_required':
+          return WantToReadToggleResult.subscriptionRequired;
         default:
           return WantToReadToggleResult.failed;
       }
     } catch (e) {
       debugPrint('Error toggling want-to-read: $e');
       return WantToReadToggleResult.failed;
+    }
+  }
+
+  Future<bool> canUseWantToRead() {
+    if (!_isInitialized || _client == null || !isAuthenticated) {
+      return Future.value(false);
+    }
+    return _canUseWantToReadFuture ??= _client!
+        .rpc('current_user_can_use_want_to_read')
+        .then((value) => value == true)
+        .catchError((Object error) {
+          debugPrint('Error checking want-to-read entitlement: $error');
+          return false;
+        });
+  }
+
+  Future<BookEngagementCounts> fetchBookEngagementCounts(String bookId) async {
+    if (!_isInitialized || _client == null || bookId.trim().isEmpty) {
+      return const BookEngagementCounts(readCount: 0, wantToReadCount: 0);
+    }
+    try {
+      final response = await _client!.rpc(
+        'get_book_engagement_counts',
+        params: {'target_book_id': bookId},
+      );
+      final rows = response is List<dynamic> ? response : <dynamic>[response];
+      final row = rows.whereType<Map<String, dynamic>>().firstOrNull;
+      if (row == null) {
+        return const BookEngagementCounts(readCount: 0, wantToReadCount: 0);
+      }
+      return BookEngagementCounts(
+        readCount: (row['read_count'] as num?)?.toInt() ?? 0,
+        wantToReadCount: (row['want_to_read_count'] as num?)?.toInt() ?? 0,
+      );
+    } catch (error) {
+      debugPrint('Error fetching book engagement counts: $error');
+      return const BookEngagementCounts(readCount: 0, wantToReadCount: 0);
     }
   }
 
@@ -2947,6 +3009,34 @@ class SupabaseService extends ChangeNotifier {
     }
     debugPrint('Supabase not initialized – favorite not toggled.');
     return FavoriteToggleResult.failed;
+  }
+
+  /// Atomically replaces one of the current user's favorites with another
+  /// completed book. This avoids temporarily exceeding the standard limit.
+  Future<bool> replaceFavorite({
+    required String removedBookId,
+    required String addedBookId,
+  }) async {
+    if (!_isInitialized || _client == null || activeProfileId.isEmpty) {
+      return false;
+    }
+
+    try {
+      final result = await _client!.rpc(
+        'replace_current_user_favorite',
+        params: {
+          'p_remove_book_id': removedBookId,
+          'p_add_book_id': addedBookId,
+        },
+      );
+      if (result == 'replaced') {
+        notifyListeners();
+        return true;
+      }
+    } catch (e) {
+      debugPrint('Error replacing favorite in Supabase: $e');
+    }
+    return false;
   }
 
   Future<int> fetchCurrentFavoriteLimit() async {

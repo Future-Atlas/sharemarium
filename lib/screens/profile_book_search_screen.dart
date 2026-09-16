@@ -7,6 +7,8 @@ import '../models/book.dart';
 import '../repositories/book_repository.dart';
 import '../services/supabase_service.dart';
 import '../widgets/post_composer_dialog.dart';
+import '../widgets/book_action_label.dart';
+import '../widgets/post_reply_dialog.dart';
 
 class ProfileBookSearchScreen extends StatefulWidget {
   const ProfileBookSearchScreen({super.key});
@@ -90,6 +92,13 @@ class _ProfileBookSearchScreenState extends State<ProfileBookSearchScreen> {
     final service = Provider.of<SupabaseService>(context, listen: false);
     final result = await service.toggleWantToRead(book: book);
     if (!mounted) return;
+    if (result == WantToReadToggleResult.subscriptionRequired) {
+      await showSubscriptionLockedDialog(
+        context: context,
+        featureLabel: '「読みたい！」',
+      );
+      return;
+    }
     _wantedStatusFutures[book.id] = service.isBookWantedByCurrentUser(book.id);
     setState(() {});
     ScaffoldMessenger.of(
@@ -276,8 +285,13 @@ class _ProfileBookSearchScreenState extends State<ProfileBookSearchScreen> {
                                     borderRadius: BorderRadius.circular(18),
                                   ),
                                 ),
-                                child: Text(
-                                  isRead ? '読了済み' : '読了',
+                                child: BookActionLabel(
+                                  bookId: book.id,
+                                  label: isRead ? '読了済み' : '読了',
+                                  color: isRead
+                                      ? const Color(0xFF00BFFF)
+                                      : const Color(0xFFFF1F1F),
+                                  wantToRead: false,
                                   style: const TextStyle(
                                     fontWeight: FontWeight.bold,
                                   ),
@@ -312,7 +326,12 @@ class _ProfileBookSearchScreenState extends State<ProfileBookSearchScreen> {
                                     borderRadius: BorderRadius.circular(18),
                                   ),
                                 ),
-                                child: Text(wanted ? '読みたい！済み' : '読みたい！'),
+                                child: BookActionLabel(
+                                  bookId: book.id,
+                                  label: wanted ? '読みたい！済み' : '読みたい！',
+                                  color: Colors.amber,
+                                  wantToRead: true,
+                                ),
                               );
                             },
                           ),

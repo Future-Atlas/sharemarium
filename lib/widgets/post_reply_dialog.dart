@@ -71,6 +71,35 @@ Future<void> showPostReplyLockedDialog({
   );
 }
 
+Future<void> showSubscriptionLockedDialog({
+  required BuildContext context,
+  required String featureLabel,
+}) {
+  return showDialog<void>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.lock_rounded, size: 64),
+          const SizedBox(height: 16),
+          Text(
+            '$featureLabelは限定コンテンツです',
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(),
+          child: const Text('閉じる'),
+        ),
+      ],
+    ),
+  );
+}
+
 Future<bool> showPostReplyDialog({
   required BuildContext context,
   required String postId,
