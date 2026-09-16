@@ -1,4 +1,5 @@
 const legalSeo = require("./legal-seo");
+const seoHome = require("./seo-home");
 const seo = require("./seo");
 
 const LEGAL_PATHS = new Set([
@@ -17,6 +18,19 @@ function normalizePath(rawPath) {
 
 module.exports = async (req, res) => {
   const normalizedPath = normalizePath(req.query?.path);
+
+  if (normalizedPath === "/") {
+    return seoHome(
+      {
+        ...req,
+        query: {
+          ...(req.query || {}),
+          path: "/",
+        },
+      },
+      res,
+    );
+  }
 
   if (LEGAL_PATHS.has(normalizedPath)) {
     return legalSeo(
