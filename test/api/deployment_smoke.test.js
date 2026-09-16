@@ -67,17 +67,24 @@ test("staging deployment uploads Flutter output and API source instead of a prev
   assert.match(vercelIgnore, /^!vercel\.json$/m);
 });
 
-test("staging smoke script uses deployment-aware Vercel curl without short-option collisions", () => {
+test("staging smoke script places Vercel global options before native curl arguments", () => {
   const script = fs.readFileSync(
     path.resolve(__dirname, "../../scripts/staging-smoke.sh"),
     "utf8",
   );
 
-  assert.match(script, /vercel curl "\$path"/);
-  assert.match(script, /--deployment "\$DEPLOYMENT_URL"/);
-  assert.match(script, /--scope "\$VERCEL_SCOPE"/);
-  assert.match(script, /--token "\$VERCEL_TOKEN"/);
-  assert.match(script, /--fail/);
+  const scopeIndex = script.indexOf('--scope "$VERCEL_SCOPE"');
+  const tokenIndex = script.indexOf('--token "$VERCEL_TOKEN"');
+  const curlIndex = script.indexOf('curl "$path"');
+  const deploymentIndex = script.indexOf('--deployment "$DEPLOYMENT_URL"');
+  const nativeCurlIndex = script.indexOf("--fail");
+
+  assert.ok(scopeIndex >= 0);
+  assert.ok(tokenIndex > scopeIndex);
+  assert.ok(curlIndex > tokenIndex);
+  assert.ok(deploymentIndex > curlIndex);
+  assert.ok(nativeCurlIndex > deploymentIndex);
+
   assert.match(script, /--silent/);
   assert.match(script, /--show-error/);
   assert.match(script, /--dump-header "\$headers"/);
