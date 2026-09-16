@@ -18,10 +18,11 @@ check_endpoint() {
   local headers="$workdir/${safe_name}.headers"
   local body="$workdir/${safe_name}.body"
 
-  vercel curl "$path" \
-    --deployment "$DEPLOYMENT_URL" \
+  vercel \
     --scope "$VERCEL_SCOPE" \
     --token "$VERCEL_TOKEN" \
+    curl "$path" \
+    --deployment "$DEPLOYMENT_URL" \
     --fail \
     --silent \
     --show-error \
