@@ -20,6 +20,7 @@ class FavoriteRetentionState {
   final bool selectionRequired;
 
   bool get isUnlimited => favoriteLimit >= 2147483647;
+  bool get isPremium => effectivePlan == 'premium';
 
   factory FavoriteRetentionState.fromJson(Map<String, dynamic> json) {
     int parseInt(Object? value) => value is num
@@ -109,6 +110,27 @@ class FavoriteRetentionService {
       return response == 'updated' || response == 'not_required';
     } catch (error) {
       debugLog('Error saving favorite retention selection: $error');
+      return false;
+    }
+  }
+
+  /// Adds a favorite through the database's Premium-only compatibility RPC.
+  ///
+  /// The legacy Flutter favorite mutation still performs a finite client-side
+  /// precheck. This path is used only when that precheck reports a standard
+  /// limit while the database says the account is actually Premium/unlimited.
+  static Future<bool> addPremiumFavorite(String bookId) async {
+    if (!isAuthenticated || bookId.trim().isEmpty) return false;
+    try {
+      final state = await fetchState();
+      if (state == null || !state.isPremium || !state.isUnlimited) return false;
+      final response = await _client.rpc(
+        'add_current_user_premium_favorite',
+        params: {'p_book_id': bookId.trim()},
+      );
+      return response == 'added' || response == 'already_favorited';
+    } catch (error) {
+      debugLog('Error adding Premium favorite: $error');
       return false;
     }
   }
