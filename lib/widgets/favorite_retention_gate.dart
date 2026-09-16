@@ -39,7 +39,27 @@ class _FavoriteRetentionGateState extends State<FavoriteRetentionGate> {
   Future<void> _checkRetention(String profileId) async {
     if (profileId.isEmpty || _checking || _dialogOpen) return;
     _checking = true;
+    var retryAfterCheck = false;
     try {
+      final service = context.read<SupabaseService>();
+
+      // Do not interrupt the mandatory legal-consent or profile-onboarding
+      // flows. Both operations notify SupabaseService when they complete; by
+      // clearing the observed ID we re-check on that next rebuild.
+      final hasLegalConsent = await service.hasCurrentLegalConsent();
+      if (!mounted || _observedProfileId != profileId) return;
+      if (!hasLegalConsent) {
+        _observedProfileId = null;
+        return;
+      }
+
+      final hasCompletedRegistration = await service.hasCompletedRegistration();
+      if (!mounted || _observedProfileId != profileId) return;
+      if (!hasCompletedRegistration) {
+        _observedProfileId = null;
+        return;
+      }
+
       final state = await FavoriteRetentionService.fetchState();
       if (!mounted || _observedProfileId != profileId) return;
       if (state == null || !state.selectionRequired || state.isUnlimited) return;
@@ -61,14 +81,15 @@ class _FavoriteRetentionGateState extends State<FavoriteRetentionGate> {
       if (!mounted || _observedProfileId != profileId) return;
 
       // If saving lost a race with another session or a plan change, re-read
-      // the state once. A successful save normally makes this a no-op.
-      if (saved != true) {
+      // once after this check has fully released its in-flight guard.
+      retryAfterCheck = saved != true;
+    } finally {
+      _checking = false;
+      if (retryAfterCheck && mounted && _observedProfileId == profileId) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) _checkRetention(profileId);
         });
       }
-    } finally {
-      _checking = false;
     }
   }
 }
