@@ -15,7 +15,6 @@ jobs:
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-      VERCEL_SCOPE: sharemarium
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -42,10 +41,10 @@ jobs:
         run: npm install --global vercel@59.18.0
 
       - name: Verify Vercel Project Access
-        run: vercel project inspect "$VERCEL_PROJECT_ID" --scope="$VERCEL_SCOPE" --token="$VERCEL_TOKEN"
+        run: vercel project inspect "$VERCEL_PROJECT_ID" --non-interactive
 
       - name: Pull Vercel Environment Information (Preview)
-        run: vercel pull --yes --environment=preview --scope="$VERCEL_SCOPE" --token="$VERCEL_TOKEN"
+        run: vercel pull --yes --environment=preview
 
       - name: Verify Flutter build output
         shell: bash
@@ -59,7 +58,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          vercel deploy . --dry --format=json --scope="$VERCEL_SCOPE" --token="$VERCEL_TOKEN" > /tmp/vercel-deploy-manifest.json
+          vercel deploy . --dry --format=json > /tmp/vercel-deploy-manifest.json
           grep -q 'build/web/flutter_bootstrap.js' /tmp/vercel-deploy-manifest.json
           grep -q 'api/home-ad-eligibility.js' /tmp/vercel-deploy-manifest.json
           echo "Verified Flutter assets and API source are included in the Vercel deployment manifest."
@@ -69,7 +68,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          deployment_url="$(vercel deploy . --force --scope="$VERCEL_SCOPE" --token="$VERCEL_TOKEN")"
+          deployment_url="$(vercel deploy . --force)"
           deployment_url="$(printf '%s\n' "$deployment_url" | tail -n 1 | tr -d '\r')"
           if [[ ! "$deployment_url" =~ ^https:// ]]; then
             echo "::error::Could not determine preview deployment URL: $deployment_url"
