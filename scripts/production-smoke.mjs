@@ -6,13 +6,15 @@ const DEFAULT_ATTEMPTS = 6;
 const DEFAULT_RETRY_DELAY_MS = 8000;
 const DEFAULT_TIMEOUT_MS = 15000;
 
-export const smokeChecks = [
-  {
-    path: "/",
-    contentTypes: ["text/html"],
-    bodyPattern: /<html(?:\s|>)/i,
-    description: "Flutter entry page",
-  },
+const flutterEntryCheck = {
+  path: "/",
+  contentTypes: ["text/html"],
+  bodyPattern: /<html(?:\s|>)/i,
+  description: "Flutter entry page",
+};
+
+export const productionSmokeChecks = [
+  flutterEntryCheck,
   {
     path: "/robots.txt",
     contentTypes: ["text/plain"],
@@ -32,6 +34,36 @@ export const smokeChecks = [
     description: "ads.txt",
   },
 ];
+
+export const stagingSmokeChecks = [
+  flutterEntryCheck,
+  {
+    path: "/flutter_bootstrap.js",
+    contentTypes: [
+      "application/javascript",
+      "text/javascript",
+      "application/x-javascript",
+    ],
+    bodyPattern: /(?:_flutter|FlutterLoader|flutter)/i,
+    description: "Flutter bootstrap asset",
+  },
+  {
+    path: "/api/home-ad-eligibility",
+    contentTypes: ["application/json"],
+    bodyPattern: /"eligible"\s*:/i,
+    description: "Vercel API runtime",
+  },
+];
+
+// Backward-compatible export for existing imports and local usage.
+export const smokeChecks = productionSmokeChecks;
+
+export function smokeChecksForProfile(profile = "production") {
+  const normalized = String(profile || "production").trim().toLowerCase();
+  if (normalized === "production") return productionSmokeChecks;
+  if (normalized === "staging") return stagingSmokeChecks;
+  throw new Error(`Unsupported SMOKE_PROFILE: ${profile}`);
+}
 
 const sleep = (ms) => new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
 
@@ -123,19 +155,23 @@ export async function runProductionSmokeTests({
   baseUrl = process.env.SMOKE_BASE_URL || DEFAULT_BASE_URL,
   fetchImpl = fetch,
   bypassToken = process.env.SMOKE_BYPASS_TOKEN || "",
+  profile = process.env.SMOKE_PROFILE || "production",
 } = {}) {
   const normalizedBaseUrl = new URL(baseUrl);
   if (!/^https?:$/.test(normalizedBaseUrl.protocol)) {
     throw new Error("SMOKE_BASE_URL must use http or https");
   }
 
-  console.log(`Running deployment smoke tests against ${normalizedBaseUrl.origin}`);
+  const checks = smokeChecksForProfile(profile);
+  console.log(
+    `Running ${profile} deployment smoke tests against ${normalizedBaseUrl.origin}`,
+  );
   await Promise.all(
-    smokeChecks.map((check) =>
+    checks.map((check) =>
       checkEndpoint(normalizedBaseUrl, check, { fetchImpl, bypassToken }),
     ),
   );
-  console.log("Deployment smoke tests passed.");
+  console.log(`${profile} deployment smoke tests passed.`);
 }
 
 const invokedPath = process.argv[1] ? pathToFileURL(resolve(process.argv[1])).href : null;
