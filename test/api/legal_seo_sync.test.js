@@ -32,6 +32,7 @@ test("crawler legal routes use the synchronized legal renderer", () => {
   const crawlerRoute = vercel.routes.find(
     (route) =>
       String(route.dest || "").startsWith("/api/seo-router") &&
+      String(route.src || "").includes("privacy") &&
       route.has?.some((condition) => condition.key === "user-agent"),
   );
 
