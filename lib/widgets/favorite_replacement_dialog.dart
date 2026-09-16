@@ -16,6 +16,7 @@ Future<bool> showFavoriteReplacementDialog({
   required String targetBookId,
   required String targetBookTitle,
 }) async {
+  final service = Provider.of<SupabaseService>(context, listen: false);
   final retentionState = await FavoriteRetentionService.fetchState();
   if (!context.mounted) return false;
   if (retentionState?.isPremium == true &&
@@ -23,9 +24,9 @@ Future<bool> showFavoriteReplacementDialog({
     return FavoriteRetentionService.addPremiumFavorite(targetBookId);
   }
 
-  final replacementLimit = retentionState?.favoriteLimit ??
-      SupabaseService.standardFavoriteLimit;
-  final service = Provider.of<SupabaseService>(context, listen: false);
+  final replacementLimit =
+      retentionState?.favoriteLimit ?? await service.fetchCurrentFavoriteLimit();
+  if (!context.mounted) return false;
   final favorites = await service.fetchUserFavorites(service.activeProfileId);
   if (!context.mounted) return false;
 
