@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 export const STAGING_PROJECT = 'wpoigmywpewrrbudqhgh';
-export const FUNCTIONS = ['session-guard', 'delete-account', 'admin-delete-account'];
+export const FUNCTIONS = ['session-guard', 'delete-account', 'admin-delete-account', 'billing-checkout', 'billing-webhook'];
 
 export function validateEnvironment(env) {
   if (env.GITHUB_ACTIONS !== 'true' ||
