@@ -526,6 +526,7 @@ DECLARE
     charge_row private.billing_charges%ROWTYPE;
     target_status TEXT;
     event_order_at TIMESTAMP WITH TIME ZONE;
+    succeeded_refund_total BIGINT;
 BEGIN
     SELECT event.*
       INTO event_row
@@ -649,6 +650,22 @@ BEGIN
             event_order_at
         )
         RETURNING * INTO charge_row;
+    END IF;
+
+    SELECT COALESCE(sum(refund.amount_minor), 0)
+      INTO succeeded_refund_total
+      FROM private.billing_refunds AS refund
+     WHERE refund.charge_id = charge_row.id
+       AND refund.status = 'succeeded';
+
+    IF succeeded_refund_total > 0 THEN
+        UPDATE private.billing_charges AS charge
+           SET status = CASE
+                WHEN succeeded_refund_total >= charge.amount_minor THEN 'refunded'
+                ELSE 'partially_refunded'
+           END
+         WHERE charge.id = charge_row.id
+         RETURNING charge.* INTO charge_row;
     END IF;
 
     UPDATE private.billing_webhook_events
@@ -778,6 +795,15 @@ BEGIN
            OR refund_row.currency <> upper(target_currency) THEN
             RAISE EXCEPTION 'billing_refund_identity_mismatch' USING ERRCODE = 'P0001';
         END IF;
+        IF refund_row.status = 'succeeded' AND target_status <> 'succeeded' THEN
+            UPDATE private.billing_webhook_events
+               SET status = 'ignored',
+                   processed_at = timezone('utc'::text, now()),
+                   last_error = NULL,
+                   processing_note = 'terminal_refund_state'
+             WHERE id = webhook_event_id;
+            RETURN refund_row.id;
+        END IF;
         UPDATE private.billing_refunds AS refund
            SET webhook_event_id = webhook_event_id,
                reason_code = target_reason_code,
@@ -785,7 +811,7 @@ BEGIN
                status = target_status,
                completed_at = CASE
                     WHEN target_status = 'succeeded'
-                        THEN COALESCE(target_completed_at, refund.completed_at, timezone('utc'::text, now()))
+                        THEN COALESCE(refund.completed_at, target_completed_at, timezone('utc'::text, now()))
                     ELSE target_completed_at
                END,
                last_billing_event_order_at = event_order_at

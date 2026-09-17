@@ -267,7 +267,7 @@ select ok(
     (select id from private.billing_webhook_events where provider_event_id = 'evt_failure'),
     '79000000-0000-4000-8000-000000000001'::uuid,
     null, '2030-02-02 00:00:00+00'::timestamptz,
-    null, null, '2030-01-10 00:00:00+00'::timestamptz, 'cus_1'
+    null, null, null, 'cus_1'
   ),
   'newer payment failure applies'
 );
@@ -279,7 +279,7 @@ select is(
 select is(
   (select payment_grace_until from private.subscription_entitlements where profile_id = '79000000-0000-4000-8000-000000000001'),
   '2030-01-10 00:00:00+00'::timestamptz,
-  'payment failure stores one-week grace deadline supplied by adapter'
+  'payment failure enforces the one-week grace deadline in the database'
 );
 
 select * from public.claim_billing_webhook_event(
@@ -617,6 +617,60 @@ select is(
   (select count(*)::bigint from private.billing_refunds where provider = 'testpay' and provider_refund_id = 'ref_3'),
   0::bigint,
   'rejected over-refund does not create a refund row'
+);
+
+
+-- Succeeded refunds are terminal, even if a newer failure event arrives.
+select * from public.claim_billing_webhook_event(
+  'testpay', 'evt_refund_new_failed', 'refund.failed', 'refund.failed',
+  '79000000-0000-4000-8000-000000000001'::uuid,
+  repeat('ab', 32), '2030-01-17 00:00:00+00'::timestamptz
+);
+select isnt(
+  public.apply_normalized_refund_event(
+    (select id from private.billing_webhook_events where provider_event_id = 'evt_refund_new_failed'),
+    'ch_1', 'ref_2', 350, 'JPY', 'other', 'late provider failure', null
+  ),
+  null::uuid,
+  'newer failed event returns the existing succeeded refund id'
+);
+select is(
+  (select status from private.billing_refunds where provider = 'testpay' and provider_refund_id = 'ref_2'),
+  'succeeded',
+  'succeeded refund remains terminal after a newer failed event'
+);
+select is(
+  (select status from private.billing_webhook_events where provider_event_id = 'evt_refund_new_failed'),
+  'ignored',
+  'newer non-success event for a succeeded refund is audited as ignored'
+);
+select is(
+  (select processing_note from private.billing_webhook_events where provider_event_id = 'evt_refund_new_failed'),
+  'terminal_refund_state',
+  'terminal refund ignore reason is explicit'
+);
+
+-- A later charge event cannot erase refund-derived charge state.
+select * from public.claim_billing_webhook_event(
+  'testpay', 'evt_charge_after_refund', 'charge.succeeded', 'charge.paid',
+  '79000000-0000-4000-8000-000000000001'::uuid,
+  repeat('bc', 32), '2030-01-18 00:00:00+00'::timestamptz
+);
+select isnt(
+  public.apply_normalized_charge_event(
+    (select id from private.billing_webhook_events where provider_event_id = 'evt_charge_after_refund'),
+    '79000000-0000-4000-8000-000000000001'::uuid,
+    'premium', 'monthly', 550, 'JPY', 'ch_1', 'cus_1', 'inv_1',
+    '2030-01-11 00:00:00+00'::timestamptz,
+    '2030-01-10 00:00:00+00'::timestamptz, '2030-02-10 00:00:00+00'::timestamptz
+  ),
+  null::uuid,
+  'later paid charge event is accepted without losing refund reconciliation'
+);
+select is(
+  (select status from private.billing_charges where provider = 'testpay' and provider_charge_id = 'ch_1'),
+  'refunded',
+  'fully refunded charge remains refunded after a later paid event'
 );
 
 reset role;
