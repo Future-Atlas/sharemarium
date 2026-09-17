@@ -6,7 +6,7 @@ class PostReply {
   final String message;
   final bool hasSpoiler;
   final DateTime createdAt;
-  final DateTime updatedAt;
+  final DateTime? updatedAt;
   final String username;
   final String userId;
   final String userAvatarUrl;
@@ -19,13 +19,13 @@ class PostReply {
     required this.message,
     required this.hasSpoiler,
     required this.createdAt,
-    required this.updatedAt,
+    this.updatedAt,
     required this.username,
     required this.userId,
     required this.userAvatarUrl,
   });
 
-  bool get isEdited => updatedAt.isAfter(createdAt);
+  bool get isEdited => updatedAt?.isAfter(createdAt) ?? false;
 
   factory PostReply.fromJson(Map<String, dynamic> json) {
     final profile = json['profiles'] as Map<String, dynamic>?;
