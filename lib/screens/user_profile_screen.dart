@@ -240,6 +240,17 @@ class _ProfileBookPostsPanelState extends State<_ProfileBookPostsPanel> {
                             currentProfileId.isEmpty ||
                             reply.profileId != currentProfileId,
                         onReplyUserTap: widget.onProfileTap,
+                        onRepliesChanged: () async {
+                          final service = Provider.of<SupabaseService>(
+                            context,
+                            listen: false,
+                          );
+                          final refreshed = await service.fetchRepliesForPosts(
+                            _posts.map((candidate) => candidate.id).toList(growable: false),
+                          );
+                          if (!mounted) return;
+                          setState(() => _replies = refreshed);
+                        },
                       );
                     },
                   ),
@@ -1390,6 +1401,7 @@ class _UserProfileScreenState extends State<UserProfileScreen>
             return profileId.isEmpty || reply.profileId != profileId;
           },
           onReplyUserTap: _openReplyProfile,
+          onRepliesChanged: _loadProfileData,
         );
       },
     );

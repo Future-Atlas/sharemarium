@@ -1437,6 +1437,7 @@ class _BookListScreenState extends State<BookListScreen> {
                 return profileId.isEmpty || reply.profileId != profileId;
               },
               onReplyUserTap: _openUserProfile,
+              onRepliesChanged: () => _controller.loadData(context),
             );
           },
         ),
@@ -1733,6 +1734,7 @@ class _BookPostsPanelState extends State<_BookPostsPanel> {
                                 currentProfileId.isEmpty ||
                                 reply.profileId != currentProfileId,
                             onReplyUserTap: widget.onUserTap,
+                            onRepliesChanged: () => _load(showLoading: false),
                           );
                         },
                       ),

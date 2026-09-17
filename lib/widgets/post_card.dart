@@ -4,6 +4,7 @@ import '../models/post.dart';
 import '../models/post_reply.dart';
 import '../models/social_models.dart';
 import '../models/profile_page_color.dart';
+import 'post_reply_owner_actions.dart';
 
 class PostCard extends StatefulWidget {
   final Post post;
@@ -23,6 +24,7 @@ class PostCard extends StatefulWidget {
   final bool Function(PostReply reply)? canReportReply;
   final bool Function(PostReply reply)? concealReplySpoiler;
   final ValueChanged<String>? onReplyUserTap;
+  final Future<void> Function()? onRepliesChanged;
   final List<PostReply> replies;
   final String? highlightedReplyId;
   final bool concealSpoiler;
@@ -47,6 +49,7 @@ class PostCard extends StatefulWidget {
     this.canReportReply,
     this.concealReplySpoiler,
     this.onReplyUserTap,
+    this.onRepliesChanged,
     this.replies = const [],
     this.highlightedReplyId,
     this.concealSpoiler = true,
@@ -1133,6 +1136,25 @@ class _PostCardState extends State<PostCard> {
                               fontSize: 9,
                             ),
                           ),
+                          if (reply.isEdited) ...[
+                            const SizedBox(width: 6),
+                            Text(
+                              '編集済み',
+                              style: TextStyle(
+                                color: tertiaryTextColor,
+                                fontSize: 9,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                          if (widget.onRepliesChanged != null) ...[
+                            const SizedBox(width: 2),
+                            PostReplyOwnerActions(
+                              reply: reply,
+                              onChanged: widget.onRepliesChanged!,
+                              iconColor: tertiaryTextColor,
+                            ),
+                          ],
                           if (onReply != null) ...[
                             const SizedBox(width: 8),
                             TextButton(
