@@ -102,14 +102,14 @@ BEGIN
 
     INSERT INTO private.billing_webhook_events (
         provider,
-        incoming_event_id,
+        provider_event_id,
         event_type,
-        incoming_normalized_type,
+        normalized_event_type,
         profile_id,
-        incoming_payload_sha256,
+        payload_sha256,
         status,
         attempt_count,
-        incoming_provider_created_at,
+        provider_created_at,
         processing_started_at,
         last_error,
         processing_note
@@ -128,7 +128,7 @@ BEGIN
         NULL,
         NULL
     )
-    ON CONFLICT (provider, incoming_event_id) DO NOTHING
+    ON CONFLICT (provider, provider_event_id) DO NOTHING
     RETURNING * INTO event_row;
 
     IF event_row.id IS NOT NULL THEN
@@ -140,20 +140,20 @@ BEGIN
       INTO event_row
       FROM private.billing_webhook_events AS event
      WHERE event.provider = btrim(incoming_provider)
-       AND event.incoming_event_id = btrim(incoming_event_id)
+       AND event.provider_event_id = btrim(incoming_event_id)
      FOR UPDATE;
 
     IF event_row.event_type <> btrim(incoming_event_type)
-       OR event_row.incoming_normalized_type IS DISTINCT FROM incoming_normalized_type
+       OR event_row.normalized_event_type IS DISTINCT FROM incoming_normalized_type
        OR (
             event_row.profile_id IS NOT NULL
             AND incoming_profile_id IS NOT NULL
             AND event_row.profile_id <> incoming_profile_id
        )
        OR (
-            event_row.incoming_payload_sha256 IS NOT NULL
+            event_row.payload_sha256 IS NOT NULL
             AND incoming_payload_sha256 IS NOT NULL
-            AND lower(event_row.incoming_payload_sha256) <> lower(incoming_payload_sha256)
+            AND lower(event_row.payload_sha256) <> lower(incoming_payload_sha256)
        ) THEN
         RAISE EXCEPTION 'billing_event_identity_mismatch'
             USING ERRCODE = 'P0001';
@@ -174,10 +174,10 @@ BEGIN
     END IF;
 
     UPDATE private.billing_webhook_events AS event
-       SET incoming_normalized_type = COALESCE(event.incoming_normalized_type, incoming_normalized_type),
+       SET normalized_event_type = COALESCE(event.normalized_event_type, incoming_normalized_type),
            profile_id = COALESCE(event.profile_id, incoming_profile_id),
-           incoming_payload_sha256 = COALESCE(event.incoming_payload_sha256, lower(incoming_payload_sha256)),
-           incoming_provider_created_at = COALESCE(event.incoming_provider_created_at, incoming_provider_created_at),
+           payload_sha256 = COALESCE(event.payload_sha256, lower(incoming_payload_sha256)),
+           provider_created_at = COALESCE(event.provider_created_at, incoming_provider_created_at),
            status = 'processing',
            attempt_count = event.attempt_count + 1,
            processing_started_at = now_utc,
