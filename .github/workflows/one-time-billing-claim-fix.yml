@@ -1,0 +1,166 @@
+name: One-time billing claim SQL fix
+
+on:
+  push:
+    branches:
+      - feat/normalized-billing-events
+    paths:
+      - .github/workflows/one-time-billing-claim-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/normalized-billing-events
+          fetch-depth: 0
+      - name: Replace claim function with unambiguous identifiers
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('supabase/migrations/20260917113000_add_normalized_billing_event_processing.sql')
+          text = path.read_text(encoding='utf-8')
+          start = text.index('CREATE OR REPLACE FUNCTION public.claim_billing_webhook_event(')
+          end = text.index('\nCREATE OR REPLACE FUNCTION public.mark_billing_webhook_event_failed(', start)
+          block = r'''CREATE OR REPLACE FUNCTION public.claim_billing_webhook_event(
+    incoming_provider TEXT,
+    incoming_event_id TEXT,
+    incoming_event_type TEXT,
+    incoming_normalized_type TEXT,
+    incoming_profile_id UUID DEFAULT NULL,
+    incoming_payload_sha256 TEXT DEFAULT NULL,
+    incoming_provider_created_at TIMESTAMP WITH TIME ZONE DEFAULT NULL
+)
+RETURNS TABLE (
+    webhook_event_id UUID,
+    should_process BOOLEAN,
+    event_status TEXT
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+    event_row private.billing_webhook_events%ROWTYPE;
+    now_utc TIMESTAMP WITH TIME ZONE := timezone('utc'::text, now());
+BEGIN
+    IF incoming_provider IS NULL OR char_length(btrim(incoming_provider)) NOT BETWEEN 1 AND 64 THEN
+        RAISE EXCEPTION 'invalid_billing_provider' USING ERRCODE = '22023';
+    END IF;
+    IF incoming_event_id IS NULL OR char_length(btrim(incoming_event_id)) NOT BETWEEN 1 AND 255 THEN
+        RAISE EXCEPTION 'invalid_provider_event_id' USING ERRCODE = '22023';
+    END IF;
+    IF incoming_event_type IS NULL OR char_length(btrim(incoming_event_type)) NOT BETWEEN 1 AND 120 THEN
+        RAISE EXCEPTION 'invalid_provider_event_type' USING ERRCODE = '22023';
+    END IF;
+    IF incoming_normalized_type IS NULL THEN
+        RAISE EXCEPTION 'normalized_event_type_required' USING ERRCODE = '22023';
+    END IF;
+    IF incoming_payload_sha256 IS NOT NULL
+       AND incoming_payload_sha256 !~ '^[0-9A-Fa-f]{64}$' THEN
+        RAISE EXCEPTION 'invalid_payload_sha256' USING ERRCODE = '22023';
+    END IF;
+
+    INSERT INTO private.billing_webhook_events (
+        provider,
+        provider_event_id,
+        event_type,
+        normalized_event_type,
+        profile_id,
+        payload_sha256,
+        status,
+        attempt_count,
+        provider_created_at,
+        processing_started_at,
+        last_error,
+        processing_note
+    )
+    VALUES (
+        btrim(incoming_provider),
+        btrim(incoming_event_id),
+        btrim(incoming_event_type),
+        incoming_normalized_type,
+        incoming_profile_id,
+        lower(incoming_payload_sha256),
+        'processing',
+        1,
+        incoming_provider_created_at,
+        now_utc,
+        NULL,
+        NULL
+    )
+    ON CONFLICT (provider, provider_event_id) DO NOTHING
+    RETURNING * INTO event_row;
+
+    IF event_row.id IS NOT NULL THEN
+        RETURN QUERY SELECT event_row.id, true, event_row.status;
+        RETURN;
+    END IF;
+
+    SELECT event.*
+      INTO event_row
+      FROM private.billing_webhook_events AS event
+     WHERE event.provider = btrim(incoming_provider)
+       AND event.provider_event_id = btrim(incoming_event_id)
+     FOR UPDATE;
+
+    IF event_row.event_type <> btrim(incoming_event_type)
+       OR event_row.normalized_event_type IS DISTINCT FROM incoming_normalized_type
+       OR (
+            event_row.profile_id IS NOT NULL
+            AND incoming_profile_id IS NOT NULL
+            AND event_row.profile_id <> incoming_profile_id
+       )
+       OR (
+            event_row.payload_sha256 IS NOT NULL
+            AND incoming_payload_sha256 IS NOT NULL
+            AND lower(event_row.payload_sha256) <> lower(incoming_payload_sha256)
+       ) THEN
+        RAISE EXCEPTION 'billing_event_identity_mismatch'
+            USING ERRCODE = 'P0001';
+    END IF;
+
+    IF event_row.status IN ('processed', 'ignored') THEN
+        RETURN QUERY SELECT event_row.id, false, event_row.status;
+        RETURN;
+    END IF;
+
+    IF event_row.status = 'processing'
+       AND event_row.processing_started_at IS NOT NULL
+       AND event_row.processing_started_at > now_utc - interval '15 minutes' THEN
+        RETURN QUERY SELECT event_row.id, false, event_row.status;
+        RETURN;
+    END IF;
+
+    UPDATE private.billing_webhook_events AS event
+       SET normalized_event_type = COALESCE(event.normalized_event_type, incoming_normalized_type),
+           profile_id = COALESCE(event.profile_id, incoming_profile_id),
+           payload_sha256 = COALESCE(event.payload_sha256, lower(incoming_payload_sha256)),
+           provider_created_at = COALESCE(event.provider_created_at, incoming_provider_created_at),
+           status = 'processing',
+           attempt_count = event.attempt_count + 1,
+           processing_started_at = now_utc,
+           processed_at = NULL,
+           last_error = NULL,
+           processing_note = NULL
+     WHERE event.id = event_row.id
+     RETURNING event.* INTO event_row;
+
+    RETURN QUERY SELECT event_row.id, true, event_row.status;
+END;
+$$;
+'''
+          path.write_text(text[:start] + block + text[end:], encoding='utf-8')
+          PY
+      - name: Verify and commit
+        run: |
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add supabase/migrations/20260917113000_add_normalized_billing_event_processing.sql
+          git commit -m "fix: repair billing event claim identifiers"
+          git push origin HEAD:feat/normalized-billing-events
