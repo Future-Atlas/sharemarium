@@ -28,23 +28,23 @@ jobs:
           end = text.index('CREATE OR REPLACE FUNCTION public.mark_billing_webhook_event_failed(', start)
           head, claim, tail = text[:start], text[start:end], text[end:]
           replacements = [
-              ('        incoming_event_id,\n        event_type,', '        provider_event_id,\n        event_type,'),
-              ('        incoming_normalized_type,\n        profile_id,', '        normalized_event_type,\n        profile_id,'),
-              ('        incoming_payload_sha256,\n        status,', '        payload_sha256,\n        status,'),
-              ('        incoming_provider_created_at,\n        processing_started_at,', '        provider_created_at,\n        processing_started_at,'),
-              ('ON CONFLICT (provider, incoming_event_id)', 'ON CONFLICT (provider, provider_event_id)'),
-              ('event.incoming_event_id = btrim(incoming_event_id)', 'event.provider_event_id = btrim(incoming_event_id)'),
-              ('event_row.incoming_normalized_type', 'event_row.normalized_event_type'),
-              ('event_row.incoming_payload_sha256', 'event_row.payload_sha256'),
-              ('SET incoming_normalized_type = COALESCE(event.incoming_normalized_type, incoming_normalized_type)', 'SET normalized_event_type = COALESCE(event.normalized_event_type, incoming_normalized_type)'),
-              ('incoming_payload_sha256 = COALESCE(event.incoming_payload_sha256, lower(incoming_payload_sha256))', 'payload_sha256 = COALESCE(event.payload_sha256, lower(incoming_payload_sha256))'),
-              ('incoming_provider_created_at = COALESCE(event.incoming_provider_created_at, incoming_provider_created_at)', 'provider_created_at = COALESCE(event.provider_created_at, incoming_provider_created_at)'),
+              ('        incoming_event_id,\n        event_type,', '        provider_event_id,\n        event_type,', 1),
+              ('        incoming_normalized_type,\n        profile_id,', '        normalized_event_type,\n        profile_id,', 1),
+              ('        incoming_payload_sha256,\n        status,', '        payload_sha256,\n        status,', 1),
+              ('        incoming_provider_created_at,\n        processing_started_at,', '        provider_created_at,\n        processing_started_at,', 1),
+              ('ON CONFLICT (provider, incoming_event_id)', 'ON CONFLICT (provider, provider_event_id)', 1),
+              ('event.incoming_event_id = btrim(incoming_event_id)', 'event.provider_event_id = btrim(incoming_event_id)', 1),
+              ('event_row.incoming_normalized_type', 'event_row.normalized_event_type', 1),
+              ('event_row.incoming_payload_sha256', 'event_row.payload_sha256', 2),
+              ('SET incoming_normalized_type = COALESCE(event.incoming_normalized_type, incoming_normalized_type)', 'SET normalized_event_type = COALESCE(event.normalized_event_type, incoming_normalized_type)', 1),
+              ('incoming_payload_sha256 = COALESCE(event.incoming_payload_sha256, lower(incoming_payload_sha256))', 'payload_sha256 = COALESCE(event.payload_sha256, lower(incoming_payload_sha256))', 1),
+              ('incoming_provider_created_at = COALESCE(event.incoming_provider_created_at, incoming_provider_created_at)', 'provider_created_at = COALESCE(event.provider_created_at, incoming_provider_created_at)', 1),
           ]
-          for old, new in replacements:
+          for old, new, expected in replacements:
               count = claim.count(old)
-              if count != 1:
-                  raise SystemExit(f'expected one claim match for {old!r}, found {count}')
-              claim = claim.replace(old, new, 1)
+              if count != expected:
+                  raise SystemExit(f'expected {expected} claim matches for {old!r}, found {count}')
+              claim = claim.replace(old, new)
           path.write_text(head + claim + tail, encoding='utf-8')
           PY
       - name: Verify and commit
