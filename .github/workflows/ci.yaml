@@ -43,3 +43,11 @@ jobs:
 
       - name: Test Vercel APIs
         run: npm run test:api
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Type-check billing Edge Functions
+        run: deno check supabase/functions/billing-checkout/index.ts supabase/functions/billing-webhook/index.ts
