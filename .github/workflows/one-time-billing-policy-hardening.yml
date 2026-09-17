@@ -22,42 +22,53 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+
           path = Path('supabase/migrations/20260917113000_add_normalized_billing_event_processing.sql')
           text = path.read_text(encoding='utf-8')
 
-          replacements = [
-              (
-                  "            IF target_scheduled_effective_at <= event_order_at THEN\n                RAISE EXCEPTION 'scheduled_plan_effective_at_must_be_future' USING ERRCODE = '22023';\n            END IF;\n",
-                  "            IF target_scheduled_effective_at <= event_order_at THEN\n                RAISE EXCEPTION 'scheduled_plan_effective_at_must_be_future' USING ERRCODE = '22023';\n            END IF;\n            IF entitlement.current_period_end IS NULL\n               OR target_scheduled_effective_at <> entitlement.current_period_end THEN\n                RAISE EXCEPTION 'scheduled_plan_must_start_at_renewal' USING ERRCODE = '22023';\n            END IF;\n",
-                  'plan-change renewal boundary',
-              ),
-              (
-                  "        WHEN 'subscription.cancel_scheduled' THEN\n            UPDATE private.subscription_entitlements\n",
-                  "        WHEN 'subscription.cancel_scheduled' THEN\n            IF entitlement.current_period_end IS NULL THEN\n                RAISE EXCEPTION 'current_period_end_required_for_cancellation' USING ERRCODE = '22023';\n            END IF;\n            IF target_period_end IS NOT NULL\n               AND target_period_end <> entitlement.current_period_end THEN\n                RAISE EXCEPTION 'cancellation_must_use_current_period_end' USING ERRCODE = '22023';\n            END IF;\n            UPDATE private.subscription_entitlements\n",
-                  'cancel renewal boundary',
-              ),
-              (
-                  "                   current_period_end = COALESCE(target_period_end, current_period_end),\n                   expires_at = COALESCE(target_period_end, expires_at),\n                   billing_provider = event_row.provider,\n",
-                  "                   current_period_end = entitlement.current_period_end,\n                   expires_at = entitlement.current_period_end,\n                   billing_provider = event_row.provider,\n",
-                  'cancel stored renewal boundary',
-              ),
-              (
-                  "        WHEN 'subscription.payment_failed' THEN\n            IF target_payment_grace_until IS NULL\n               OR target_payment_grace_until <= event_order_at THEN\n                RAISE EXCEPTION 'valid_payment_grace_until_required' USING ERRCODE = '22023';\n            END IF;\n",
-                  "        WHEN 'subscription.payment_failed' THEN\n            IF target_payment_grace_until IS NOT NULL\n               AND target_payment_grace_until <> event_order_at + interval '7 days' THEN\n                RAISE EXCEPTION 'payment_grace_must_be_seven_days' USING ERRCODE = '22023';\n            END IF;\n",
-                  'seven-day payment grace validation',
-              ),
-              (
-                  "                   payment_grace_until = target_payment_grace_until,\n                   current_period_end = COALESCE(target_period_end, current_period_end),\n",
-                  "                   payment_grace_until = event_order_at + interval '7 days',\n                   current_period_end = COALESCE(target_period_end, current_period_end),\n",
-                  'seven-day payment grace storage',
-              ),
-          ]
-
-          for old, new, label in replacements:
-              count = text.count(old)
+          def replace_once(source, old, new, label):
+              count = source.count(old)
               if count != 1:
                   raise SystemExit(f'{label}: expected 1 match, found {count}')
-              text = text.replace(old, new, 1)
+              return source.replace(old, new, 1)
+
+          text = replace_once(
+              text,
+              "            IF target_scheduled_effective_at <= event_order_at THEN\n                RAISE EXCEPTION 'scheduled_plan_effective_at_must_be_future' USING ERRCODE = '22023';\n            END IF;\n",
+              "            IF target_scheduled_effective_at <= event_order_at THEN\n                RAISE EXCEPTION 'scheduled_plan_effective_at_must_be_future' USING ERRCODE = '22023';\n            END IF;\n            IF entitlement.current_period_end IS NULL\n               OR target_scheduled_effective_at <> entitlement.current_period_end THEN\n                RAISE EXCEPTION 'scheduled_plan_must_start_at_renewal' USING ERRCODE = '22023';\n            END IF;\n",
+              'plan-change renewal boundary',
+          )
+
+          cancel_start = text.index("        WHEN 'subscription.cancel_scheduled' THEN")
+          payment_start = text.index("        WHEN 'subscription.payment_failed' THEN", cancel_start)
+          cancel_block = text[cancel_start:payment_start]
+          cancel_block = replace_once(
+              cancel_block,
+              "        WHEN 'subscription.cancel_scheduled' THEN\n            UPDATE private.subscription_entitlements\n",
+              "        WHEN 'subscription.cancel_scheduled' THEN\n            IF entitlement.current_period_end IS NULL THEN\n                RAISE EXCEPTION 'current_period_end_required_for_cancellation' USING ERRCODE = '22023';\n            END IF;\n            IF target_period_end IS NOT NULL\n               AND target_period_end <> entitlement.current_period_end THEN\n                RAISE EXCEPTION 'cancellation_must_use_current_period_end' USING ERRCODE = '22023';\n            END IF;\n            UPDATE private.subscription_entitlements\n",
+              'cancel renewal boundary',
+          )
+          cancel_block = replace_once(
+              cancel_block,
+              "                   current_period_end = COALESCE(target_period_end, current_period_end),\n                   expires_at = COALESCE(target_period_end, expires_at),\n",
+              "                   current_period_end = entitlement.current_period_end,\n                   expires_at = entitlement.current_period_end,\n",
+              'cancel stored renewal boundary',
+          )
+          text = text[:cancel_start] + cancel_block + text[payment_start:]
+
+          text = replace_once(
+              text,
+              "        WHEN 'subscription.payment_failed' THEN\n            IF target_payment_grace_until IS NULL\n               OR target_payment_grace_until <= event_order_at THEN\n                RAISE EXCEPTION 'valid_payment_grace_until_required' USING ERRCODE = '22023';\n            END IF;\n",
+              "        WHEN 'subscription.payment_failed' THEN\n            IF target_payment_grace_until IS NOT NULL\n               AND target_payment_grace_until <> event_order_at + interval '7 days' THEN\n                RAISE EXCEPTION 'payment_grace_must_be_seven_days' USING ERRCODE = '22023';\n            END IF;\n",
+              'seven-day payment grace validation',
+          )
+          text = replace_once(
+              text,
+              "                   payment_grace_until = target_payment_grace_until,\n                   current_period_end = COALESCE(target_period_end, current_period_end),\n",
+              "                   payment_grace_until = event_order_at + interval '7 days',\n                   current_period_end = COALESCE(target_period_end, current_period_end),\n",
+              'seven-day payment grace storage',
+          )
+
           path.write_text(text, encoding='utf-8')
           PY
       - name: Verify and commit
