@@ -1,0 +1,90 @@
+name: One-time Stripe billing deployment patch
+
+on:
+  push:
+    branches:
+      - feat/stripe-billing-adapter
+    paths:
+      - .github/workflows/one-time-stripe-deployment-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/stripe-billing-adapter
+          fetch-depth: 0
+
+      - name: Update Supabase function allowlists and config
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path_str, old, new, label):
+              path = Path(path_str)
+              text = path.read_text(encoding='utf-8')
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected 1 match in {path_str}, found {count}')
+              path.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          replace_once(
+              'scripts/deploy-staging-db.mjs',
+              "export const FUNCTIONS = ['session-guard', 'delete-account', 'admin-delete-account'];",
+              "export const FUNCTIONS = ['session-guard', 'delete-account', 'admin-delete-account', 'billing-checkout', 'billing-webhook'];",
+              'staging function allowlist',
+          )
+
+          replace_once(
+              '.github/workflows/supabase-deploy.yaml',
+              '            admin-delete-account\n          )',
+              '            admin-delete-account\n            billing-checkout\n            billing-webhook\n          )',
+              'production function allowlist',
+          )
+
+          config = Path('supabase/config.toml')
+          text = config.read_text(encoding='utf-8')
+          marker = '[functions.admin-delete-account]\nverify_jwt = true\n'
+          addition = (
+              '[functions.admin-delete-account]\nverify_jwt = true\n\n'
+              '[functions.billing-checkout]\nverify_jwt = true\n\n'
+              '# Stripe cannot send a Supabase JWT. This endpoint verifies the raw-body\n'
+              '# Stripe-Signature HMAC before parsing or touching the database.\n'
+              '[functions.billing-webhook]\nverify_jwt = false\n'
+          )
+          if text.count(marker) != 1:
+              raise SystemExit('Supabase function config marker did not match exactly once')
+          config.write_text(text.replace(marker, addition, 1), encoding='utf-8')
+
+          replace_once(
+              '.github/workflows/supabase-deploy-staging.yaml',
+              'Migrations and all three Edge Functions deployed successfully.',
+              'Migrations and all approved Edge Functions deployed successfully.',
+              'staging summary wording',
+          )
+
+          replace_once(
+              'test/deployment/staging-db.test.mjs',
+              "test('apply previews first and deploys only the three approved staging functions', () => {",
+              "test('apply previews first and deploys only the approved staging functions', () => {",
+              'deployment test wording',
+          )
+          PY
+
+      - name: Verify and commit
+        run: |
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            scripts/deploy-staging-db.mjs \
+            .github/workflows/supabase-deploy.yaml \
+            .github/workflows/supabase-deploy-staging.yaml \
+            supabase/config.toml \
+            test/deployment/staging-db.test.mjs
+          git commit -m "ci: deploy Stripe billing edge functions"
+          git push origin HEAD:feat/stripe-billing-adapter
