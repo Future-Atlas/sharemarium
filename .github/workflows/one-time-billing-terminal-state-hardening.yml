@@ -1,0 +1,191 @@
+name: One-time billing terminal state hardening
+
+on:
+  push:
+    branches:
+      - feat/normalized-billing-events
+    paths:
+      - .github/workflows/one-time-billing-terminal-state-hardening.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/normalized-billing-events
+          fetch-depth: 0
+
+      - name: Protect refund-derived terminal states
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          migration = Path('supabase/migrations/20260917113000_add_normalized_billing_event_processing.sql')
+          text = migration.read_text(encoding='utf-8')
+
+          def once(source, old, new, label):
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected 1 match, found {count}')
+              return source.replace(old, new, 1)
+
+          text = once(
+              text,
+              "    target_status TEXT;\n    event_order_at TIMESTAMP WITH TIME ZONE;\nBEGIN\n    SELECT event.*\n      INTO event_row\n      FROM private.billing_webhook_events AS event\n",
+              "    target_status TEXT;\n    event_order_at TIMESTAMP WITH TIME ZONE;\n    succeeded_refund_total BIGINT;\nBEGIN\n    SELECT event.*\n      INTO event_row\n      FROM private.billing_webhook_events AS event\n",
+              'charge refund total declaration',
+          )
+
+          charge_end = """        RETURNING * INTO charge_row;
+    END IF;
+
+    UPDATE private.billing_webhook_events
+       SET profile_id = COALESCE(profile_id, target_profile_id),
+"""
+          charge_reconcile = """        RETURNING * INTO charge_row;
+    END IF;
+
+    SELECT COALESCE(sum(refund.amount_minor), 0)
+      INTO succeeded_refund_total
+      FROM private.billing_refunds AS refund
+     WHERE refund.charge_id = charge_row.id
+       AND refund.status = 'succeeded';
+
+    IF succeeded_refund_total > 0 THEN
+        UPDATE private.billing_charges AS charge
+           SET status = CASE
+                WHEN succeeded_refund_total >= charge.amount_minor THEN 'refunded'
+                ELSE 'partially_refunded'
+           END
+         WHERE charge.id = charge_row.id
+         RETURNING charge.* INTO charge_row;
+    END IF;
+
+    UPDATE private.billing_webhook_events
+       SET profile_id = COALESCE(profile_id, target_profile_id),
+"""
+          text = once(text, charge_end, charge_reconcile, 'charge refund reconciliation')
+
+          refund_identity = """        IF refund_row.charge_id <> charge_row.id
+           OR refund_row.amount_minor <> target_amount_minor
+           OR refund_row.currency <> upper(target_currency) THEN
+            RAISE EXCEPTION 'billing_refund_identity_mismatch' USING ERRCODE = 'P0001';
+        END IF;
+        UPDATE private.billing_refunds AS refund
+"""
+          refund_terminal = """        IF refund_row.charge_id <> charge_row.id
+           OR refund_row.amount_minor <> target_amount_minor
+           OR refund_row.currency <> upper(target_currency) THEN
+            RAISE EXCEPTION 'billing_refund_identity_mismatch' USING ERRCODE = 'P0001';
+        END IF;
+        IF refund_row.status = 'succeeded' AND target_status <> 'succeeded' THEN
+            UPDATE private.billing_webhook_events
+               SET status = 'ignored',
+                   processed_at = timezone('utc'::text, now()),
+                   last_error = NULL,
+                   processing_note = 'terminal_refund_state'
+             WHERE id = webhook_event_id;
+            RETURN refund_row.id;
+        END IF;
+        UPDATE private.billing_refunds AS refund
+"""
+          text = once(text, refund_identity, refund_terminal, 'refund terminal state guard')
+
+          text = once(
+              text,
+              "                    WHEN target_status = 'succeeded'\n                        THEN COALESCE(target_completed_at, refund.completed_at, timezone('utc'::text, now()))\n",
+              "                    WHEN target_status = 'succeeded'\n                        THEN COALESCE(refund.completed_at, target_completed_at, timezone('utc'::text, now()))\n",
+              'refund completion timestamp immutability',
+          )
+          migration.write_text(text, encoding='utf-8')
+
+          test_file = Path('supabase/tests/normalized_billing_event_processing_test.sql')
+          tests = test_file.read_text(encoding='utf-8')
+          tests = once(
+              tests,
+              "    null, '2030-02-02 00:00:00+00'::timestamptz,\n    null, null, '2030-01-10 00:00:00+00'::timestamptz, 'cus_1'\n",
+              "    null, '2030-02-02 00:00:00+00'::timestamptz,\n    null, null, null, 'cus_1'\n",
+              'payment failure lets DB derive grace deadline',
+          )
+          tests = tests.replace(
+              "  'payment failure stores one-week grace deadline supplied by adapter'\n",
+              "  'payment failure enforces the one-week grace deadline in the database'\n",
+              1,
+          )
+
+          insertion = r'''
+
+-- Succeeded refunds are terminal, even if a newer failure event arrives.
+select * from public.claim_billing_webhook_event(
+  'testpay', 'evt_refund_new_failed', 'refund.failed', 'refund.failed',
+  '79000000-0000-4000-8000-000000000001'::uuid,
+  repeat('ab', 32), '2030-01-17 00:00:00+00'::timestamptz
+);
+select isnt(
+  public.apply_normalized_refund_event(
+    (select id from private.billing_webhook_events where provider_event_id = 'evt_refund_new_failed'),
+    'ch_1', 'ref_2', 350, 'JPY', 'other', 'late provider failure', null
+  ),
+  null::uuid,
+  'newer failed event returns the existing succeeded refund id'
+);
+select is(
+  (select status from private.billing_refunds where provider = 'testpay' and provider_refund_id = 'ref_2'),
+  'succeeded',
+  'succeeded refund remains terminal after a newer failed event'
+);
+select is(
+  (select status from private.billing_webhook_events where provider_event_id = 'evt_refund_new_failed'),
+  'ignored',
+  'newer non-success event for a succeeded refund is audited as ignored'
+);
+select is(
+  (select processing_note from private.billing_webhook_events where provider_event_id = 'evt_refund_new_failed'),
+  'terminal_refund_state',
+  'terminal refund ignore reason is explicit'
+);
+
+-- A later charge event cannot erase refund-derived charge state.
+select * from public.claim_billing_webhook_event(
+  'testpay', 'evt_charge_after_refund', 'charge.succeeded', 'charge.paid',
+  '79000000-0000-4000-8000-000000000001'::uuid,
+  repeat('bc', 32), '2030-01-18 00:00:00+00'::timestamptz
+);
+select isnt(
+  public.apply_normalized_charge_event(
+    (select id from private.billing_webhook_events where provider_event_id = 'evt_charge_after_refund'),
+    '79000000-0000-4000-8000-000000000001'::uuid,
+    'premium', 'monthly', 550, 'JPY', 'ch_1', 'cus_1', 'inv_1',
+    '2030-01-11 00:00:00+00'::timestamptz,
+    '2030-01-10 00:00:00+00'::timestamptz, '2030-02-10 00:00:00+00'::timestamptz
+  ),
+  null::uuid,
+  'later paid charge event is accepted without losing refund reconciliation'
+);
+select is(
+  (select status from private.billing_charges where provider = 'testpay' and provider_charge_id = 'ch_1'),
+  'refunded',
+  'fully refunded charge remains refunded after a later paid event'
+);
+'''
+          marker = "\nreset role;\nselect * from finish();\nrollback;"
+          if tests.count(marker) != 1:
+              raise SystemExit('test finish marker did not match exactly once')
+          tests = tests.replace(marker, insertion + marker, 1)
+          test_file.write_text(tests, encoding='utf-8')
+          PY
+
+      - name: Verify and commit
+        run: |
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            supabase/migrations/20260917113000_add_normalized_billing_event_processing.sql \
+            supabase/tests/normalized_billing_event_processing_test.sql
+          git commit -m "fix: preserve billing terminal states"
+          git push origin HEAD:feat/normalized-billing-events
