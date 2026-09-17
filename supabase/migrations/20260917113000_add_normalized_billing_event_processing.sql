@@ -377,6 +377,10 @@ BEGIN
             IF target_scheduled_effective_at <= event_order_at THEN
                 RAISE EXCEPTION 'scheduled_plan_effective_at_must_be_future' USING ERRCODE = '22023';
             END IF;
+            IF entitlement.current_period_end IS NULL
+               OR target_scheduled_effective_at <> entitlement.current_period_end THEN
+                RAISE EXCEPTION 'scheduled_plan_must_start_at_renewal' USING ERRCODE = '22023';
+            END IF;
             UPDATE private.subscription_entitlements
                SET scheduled_plan = target_scheduled_plan,
                    scheduled_plan_effective_at = target_scheduled_effective_at,
@@ -389,12 +393,19 @@ BEGIN
              WHERE profile_id = target_profile_id;
 
         WHEN 'subscription.cancel_scheduled' THEN
+            IF entitlement.current_period_end IS NULL THEN
+                RAISE EXCEPTION 'current_period_end_required_for_cancellation' USING ERRCODE = '22023';
+            END IF;
+            IF target_period_end IS NOT NULL
+               AND target_period_end <> entitlement.current_period_end THEN
+                RAISE EXCEPTION 'cancellation_must_use_current_period_end' USING ERRCODE = '22023';
+            END IF;
             UPDATE private.subscription_entitlements
                SET cancel_at_period_end = true,
                    scheduled_plan = NULL,
                    scheduled_plan_effective_at = NULL,
-                   current_period_end = COALESCE(target_period_end, current_period_end),
-                   expires_at = COALESCE(target_period_end, expires_at),
+                   current_period_end = entitlement.current_period_end,
+                   expires_at = entitlement.current_period_end,
                    billing_provider = event_row.provider,
                    provider_customer_id = COALESCE(target_provider_customer_id, provider_customer_id),
                    last_billing_event_id = webhook_event_id,
@@ -403,14 +414,14 @@ BEGIN
              WHERE profile_id = target_profile_id;
 
         WHEN 'subscription.payment_failed' THEN
-            IF target_payment_grace_until IS NULL
-               OR target_payment_grace_until <= event_order_at THEN
-                RAISE EXCEPTION 'valid_payment_grace_until_required' USING ERRCODE = '22023';
+            IF target_payment_grace_until IS NOT NULL
+               AND target_payment_grace_until <> event_order_at + interval '7 days' THEN
+                RAISE EXCEPTION 'payment_grace_must_be_seven_days' USING ERRCODE = '22023';
             END IF;
             UPDATE private.subscription_entitlements
                SET is_active = true,
                    billing_status = 'past_due',
-                   payment_grace_until = target_payment_grace_until,
+                   payment_grace_until = event_order_at + interval '7 days',
                    current_period_end = COALESCE(target_period_end, current_period_end),
                    expires_at = COALESCE(target_period_end, expires_at),
                    billing_provider = event_row.provider,
