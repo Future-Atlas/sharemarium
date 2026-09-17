@@ -202,6 +202,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   onWantToReadUsers: () =>
                       _showEngagementUsers(wantToRead: true),
                   onReplyUserTap: _openProfile,
+                  onRepliesChanged: _load,
                   onReply: _reply,
                   onReplyReport: _reportReply,
                   concealReplySpoiler: (reply) =>

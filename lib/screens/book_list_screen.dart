@@ -253,7 +253,8 @@ class _BookListScreenState extends State<BookListScreen> {
     final service = Provider.of<SupabaseService>(context, listen: false);
     final result = await service.toggleFavorite(post.bookId);
     if (!mounted) return;
-    if (result == FavoriteToggleResult.standardLimitReached) {
+    if (result == FavoriteToggleResult.standardLimitReached ||
+        result == FavoriteToggleResult.subscriberLimitReached) {
       await _replaceFavoriteAtLimit(
         targetBookId: post.bookId,
         targetBookTitle: post.bookTitle,
@@ -1436,6 +1437,7 @@ class _BookListScreenState extends State<BookListScreen> {
                 return profileId.isEmpty || reply.profileId != profileId;
               },
               onReplyUserTap: _openUserProfile,
+              onRepliesChanged: () => _controller.loadData(context),
             );
           },
         ),
@@ -1480,6 +1482,7 @@ class _BookListScreenState extends State<BookListScreen> {
               _footerLink('権利侵害・通報', '/infringement-policy'),
               _footerLink('外部送信', '/external-transmission'),
               _footerLink('お問い合わせ', '/contact'),
+              _footerLink('運営者情報', '/about'),
             ],
           ),
         ],
@@ -1732,6 +1735,7 @@ class _BookPostsPanelState extends State<_BookPostsPanel> {
                                 currentProfileId.isEmpty ||
                                 reply.profileId != currentProfileId,
                             onReplyUserTap: widget.onUserTap,
+                            onRepliesChanged: () => _load(showLoading: false),
                           );
                         },
                       ),

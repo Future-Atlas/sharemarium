@@ -15,7 +15,6 @@ jobs:
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-      VERCEL_SCOPE: sharemarium
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -39,13 +38,46 @@ jobs:
         run: flutter build web --release --dart-define=FLUTTER_WEB_RENDERER=html --dart-define=APP_ENV=staging --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }} --dart-define=SUPABASE_REDIRECT_URL=${{ secrets.SUPABASE_REDIRECT_URL }} --dart-define=AMAZON_ASSOCIATE_TAG=${{ secrets.AMAZON_ASSOCIATE_TAG }}
 
       - name: Install Vercel CLI
-        run: npm install --global vercel@58.7.1
+        run: npm install --global vercel@59.18.0
+
+      - name: Verify Vercel Project Access
+        run: vercel project inspect "$VERCEL_PROJECT_ID" --non-interactive
 
       - name: Pull Vercel Environment Information (Preview)
-        run: vercel pull --yes --environment=preview --scope="$VERCEL_SCOPE" --token="$VERCEL_TOKEN"
+        run: vercel pull --yes --environment=preview
 
-      - name: Build Vercel Prebuilt Output (Preview)
-        run: vercel build --scope="$VERCEL_SCOPE" --token="$VERCEL_TOKEN"
+      - name: Verify Flutter build output
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s build/web/index.html
+          test -s build/web/flutter_bootstrap.js
+          echo "Flutter build output: $(du -sh build/web | cut -f1)"
+
+      - name: Verify Vercel upload manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          vercel deploy . --dry --format=json > /tmp/vercel-deploy-manifest.json
+          grep -q 'build/web/flutter_bootstrap.js' /tmp/vercel-deploy-manifest.json
+          grep -q 'api/home-ad-eligibility.js' /tmp/vercel-deploy-manifest.json
+          echo "Verified Flutter assets and API source are included in the Vercel deployment manifest."
 
       - name: Deploy to Vercel Preview
-        run: vercel deploy --prebuilt --scope="$VERCEL_SCOPE" --token="$VERCEL_TOKEN"
+        id: deploy_preview
+        shell: bash
+        run: |
+          set -euo pipefail
+          deployment_url="$(vercel deploy . --force)"
+          deployment_url="$(printf '%s\n' "$deployment_url" | tail -n 1 | tr -d '\r')"
+          if [[ ! "$deployment_url" =~ ^https:// ]]; then
+            echo "::error::Could not determine preview deployment URL: $deployment_url"
+            exit 1
+          fi
+          echo "url=$deployment_url" >> "$GITHUB_OUTPUT"
+          echo "Preview deployment: $deployment_url"
+
+      - name: Smoke test staging preview
+        env:
+          DEPLOYMENT_URL: ${{ steps.deploy_preview.outputs.url }}
+        run: bash scripts/staging-smoke.sh

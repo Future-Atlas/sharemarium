@@ -240,6 +240,17 @@ class _ProfileBookPostsPanelState extends State<_ProfileBookPostsPanel> {
                             currentProfileId.isEmpty ||
                             reply.profileId != currentProfileId,
                         onReplyUserTap: widget.onProfileTap,
+                        onRepliesChanged: () async {
+                          final service = Provider.of<SupabaseService>(
+                            context,
+                            listen: false,
+                          );
+                          final refreshed = await service.fetchRepliesForPosts(
+                            _posts.map((candidate) => candidate.id).toList(growable: false),
+                          );
+                          if (!mounted) return;
+                          setState(() => _replies = refreshed);
+                        },
                       );
                     },
                   ),
@@ -801,7 +812,8 @@ class _UserProfileScreenState extends State<UserProfileScreen>
       listen: false,
     ).toggleFavorite(bookId);
     if (!mounted) return;
-    if (result == FavoriteToggleResult.standardLimitReached) {
+    if (result == FavoriteToggleResult.standardLimitReached ||
+        result == FavoriteToggleResult.subscriberLimitReached) {
       final replaced = await showFavoriteReplacementDialog(
         context: context,
         targetBookId: bookId,
@@ -1389,6 +1401,7 @@ class _UserProfileScreenState extends State<UserProfileScreen>
             return profileId.isEmpty || reply.profileId != profileId;
           },
           onReplyUserTap: _openReplyProfile,
+          onRepliesChanged: _loadProfileData,
         );
       },
     );
@@ -1450,7 +1463,9 @@ class _UserProfileScreenState extends State<UserProfileScreen>
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
           child: Text(
             _isOwnProfile
-                ? '${_favorites.length}冊/$_favoriteLimit冊'
+                ? _favoriteLimit >= SupabaseService.premiumFavoriteLimit
+                      ? '${_favorites.length}冊/無制限'
+                      : '${_favorites.length}冊/$_favoriteLimit冊'
                 : '${_favorites.length}冊',
             style: const TextStyle(
               color: Colors.black,

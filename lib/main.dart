@@ -18,6 +18,7 @@ import 'screens/external_transmission_screen.dart';
 import 'screens/legal_consent_screen.dart';
 import 'screens/account_settings_screen.dart';
 import 'screens/contact_screen.dart';
+import 'screens/operator_info_screen.dart';
 import 'screens/profile_onboarding_screen.dart';
 import 'screens/moderation_screen.dart';
 import 'screens/account_suspension_gate.dart';
@@ -149,6 +150,7 @@ class MyApp extends StatelessWidget {
         '/external-transmission': (context) =>
             const ExternalTransmissionScreen(),
         '/contact': (context) => const ContactScreen(),
+        '/about': (context) => const OperatorInfoScreen(),
       },
       onUnknownRoute: (_) => MaterialPageRoute<void>(
         builder: (_) => const AccountSuspensionGate(
@@ -297,6 +299,8 @@ class _MainNavigationShellState extends State<MainNavigationShell>
         return 10;
       case '/contact':
         return 11;
+      case '/about':
+        return 12;
       default:
         return _openPrivacyPasswordRecovery ? 2 : 0;
     }
@@ -333,6 +337,8 @@ class _MainNavigationShellState extends State<MainNavigationShell>
         return '/external-transmission';
       case 11:
         return '/contact';
+      case 12:
+        return '/about';
       default:
         return '/';
     }
@@ -581,6 +587,8 @@ class _MainNavigationShellState extends State<MainNavigationShell>
         return '外部送信に関する公表事項';
       case 11:
         return 'お問い合わせ';
+      case 12:
+        return '運営者情報';
       default:
         return 'ホーム';
     }
@@ -854,6 +862,11 @@ class _MainNavigationShellState extends State<MainNavigationShell>
                             key: const ValueKey('ContactScreen'),
                             onClose: () => _setCurrentScreenIndex(3),
                           )
+                        : _currentScreenIndex == 12
+                        ? OperatorInfoScreen(
+                            key: const ValueKey('OperatorInfoScreen'),
+                            onClose: () => _setCurrentScreenIndex(3),
+                          )
                         : const ModerationScreen(
                             key: ValueKey('ModerationScreen'),
                           ),
@@ -876,6 +889,11 @@ class _HelpScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final items = <_HelpItem>[
+      _HelpItem(
+        title: '運営者情報',
+        path: '/about',
+        screenBuilder: (_) => const OperatorInfoScreen(),
+      ),
       _HelpItem(
         title: '利用規約',
         path: '/terms',
@@ -921,7 +939,7 @@ class _HelpScreen extends StatelessWidget {
               return const Padding(
                 padding: EdgeInsets.only(bottom: 8),
                 child: Text(
-                  '規約・ポリシー',
+                  'サービス情報・規約',
                   style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
                 ),
               );

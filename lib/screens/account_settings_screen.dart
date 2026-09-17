@@ -16,6 +16,7 @@ import 'external_transmission_screen.dart';
 import 'infringement_policy_screen.dart';
 import 'privacy_policy_screen.dart';
 import 'profile_onboarding_screen.dart';
+import 'subscription_status_screen.dart';
 import 'terms_screen.dart';
 
 class AccountSettingsScreen extends StatefulWidget {
@@ -160,6 +161,19 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                     onTap: () =>
                         themeService.setDarkMode(!themeService.isDarkMode),
                   ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            const _SectionTitle('プラン・契約'),
+            _SettingsCard(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.workspace_premium_outlined),
+                  title: const Text('プラン・契約'),
+                  subtitle: const Text('現在のプラン・無料体験・次回更新日を確認'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => _push(const SubscriptionStatusScreen()),
                 ),
               ],
             ),
@@ -379,7 +393,7 @@ class _PublicAccountSettingsScreenState
         ),
         const SizedBox(height: 4),
         Text(
-          'ヘッダーと投稿の外枠に使用され、他のユーザーにも表示されます。全14色はサブスク特典です。',
+          'ヘッダーと投稿の外枠に使用され、他のユーザーにも表示されます。全14色はPremium特典です。',
           style: TextStyle(
             fontSize: 12,
             color: theme.colorScheme.onSurface.withValues(alpha: 0.68),
@@ -398,13 +412,13 @@ class _PublicAccountSettingsScreenState
               button: true,
               selected: selected,
               enabled: !locked,
-              label: locked ? '${option.label}はサブスク限定' : '${option.label}を選択',
+              label: locked ? '${option.label}はPremium限定' : '${option.label}を選択',
               child: InkWell(
                 borderRadius: BorderRadius.circular(8),
                 onTap: () {
                   if (locked) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('このページカラーはサブスク限定です。')),
+                      const SnackBar(content: Text('このページカラーはPremium限定です。')),
                     );
                     return;
                   }

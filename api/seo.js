@@ -641,6 +641,7 @@ module.exports = async (req, res) => {
         ${content}
       </main>
       <footer>
+        <p><a href="${SITE_URL}/about">運営者情報</a> | <a href="${SITE_URL}/contact">お問い合わせ</a></p>
         <p>© 2026 ${SITE_BRAND}. All rights reserved.</p>
       </footer>
     </body>
@@ -1039,6 +1040,58 @@ module.exports = async (req, res) => {
     return res.status(200).send(html);
   }
 
+  if (decodedPath === "/about") {
+    const description =
+      "Sharemarium（シェアマリウム）は、伊能 龍之介が企画・開発・運営する読書記録Webサービスです。共同開発者は劉 鴻斌です。";
+    const html = renderPage({
+      title: "運営者情報",
+      description,
+      content: `
+        <section>
+          <h2>運営者情報</h2>
+          <h3>Sharemariumについて</h3>
+          <p>Sharemarium（シェアマリウム）は、伊能 龍之介が企画・開発・運営する読書記録Webサービスです。</p>
+          <p>読んだ本を記録し、感想をみんなと共有できる読書レビューSNSです。自分用の読書記録にも、お友だちとの感想共有にも使えるSharemariumで、あなただけの本棚を作りましょう。</p>
+          <h3>企画・開発・運営</h3>
+          <p style="display:flex;flex-wrap:wrap;align-items:center;gap:12px;">伊能 龍之介 <a href="https://www.instagram.com/ryunosukeino/" target="_blank" rel="noopener noreferrer">Instagram</a></p>
+          <h3>共同開発</h3>
+          <p>劉 鴻斌</p>
+          <h3>お問い合わせ</h3>
+          <p>サービスに関するお問い合わせは、お問い合わせフォームからご連絡ください。</p>
+          <p><a href="/contact">お問い合わせフォーム</a></p>
+        </section>
+      `,
+      jsonLd: {
+        "@context": "https://schema.org",
+        "@type": "AboutPage",
+        name: "運営者情報 | Sharemarium",
+        url: toAbsoluteUrl(decodedPath),
+        description,
+        about: {
+          "@type": "WebSite",
+          name: SITE_NAME,
+          alternateName: SITE_ALT_NAME,
+          url: `${SITE_URL}/`,
+          creator: {
+            "@type": "Person",
+            name: "伊能 龍之介",
+            sameAs: ["https://www.instagram.com/ryunosukeino/"],
+          },
+          contributor: { "@type": "Person", name: "劉 鴻斌" },
+        },
+      },
+      extraJsonLd: [breadcrumbStructuredData([
+        { name: "ホーム", url: `${SITE_URL}/` },
+        { name: "運営者情報", url: toAbsoluteUrl(decodedPath) },
+      ])],
+      pagePath: decodedPath,
+      robots: "index,follow",
+    });
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    setDiagnosticsHeader(res, diagnostics);
+    return res.status(200).send(html);
+  }
+
   if (decodedPath === "/contact") {
     const html = renderPage({
       title: "お問い合わせ",
@@ -1259,6 +1312,7 @@ module.exports = async (req, res) => {
                 <li><a href="${SITE_URL}/infringement-policy">権利侵害・通報ポリシー</a></li>
                 <li><a href="${SITE_URL}/external-transmission">外部送信に関する公表事項</a></li>
                 <li><a href="${SITE_URL}/contact">お問い合わせ</a></li>
+                <li><a href="${SITE_URL}/about">運営者情報</a></li>
             </ul>
         `;
 

@@ -128,7 +128,7 @@
       "dest": "/api/seo-router?path=/"
     },
     {
-      "src": "/(genre/.*|book/.*|user/.*|users/.*|profile/.*|privacy|terms|community-guidelines|infringement-policy|external-transmission|contact)",
+      "src": "/(genre/.*|book/.*|user/.*|users/.*|profile/.*|privacy|terms|community-guidelines|infringement-policy|external-transmission|contact|about)",
       "has": [
         {
           "type": "header",

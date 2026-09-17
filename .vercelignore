@@ -1,0 +1,11 @@
+# CI builds Flutter before invoking Vercel CLI. Keep source deployments small,
+# but explicitly upload the generated web output even though /build is ignored
+# by Git. API functions and the Flutter legal-document sources are required by
+# the Vercel runtime.
+/*
+!api
+!build
+!lib
+!package.json
+!package-lock.json
+!vercel.json
