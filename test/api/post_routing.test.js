@@ -19,6 +19,7 @@ function destination(url, agent) {
 }
 
 for (const [url, expected] of [
+  ['/about', '/api/seo-router?path=/about'],
   ['/posts', '/api/posts-seo'],
   ['/posts/11111111-1111-4111-8111-111111111111', '/api/post-seo?post_id=11111111-1111-4111-8111-111111111111'],
 ]) {

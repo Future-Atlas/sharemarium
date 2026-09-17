@@ -1482,6 +1482,7 @@ class _BookListScreenState extends State<BookListScreen> {
               _footerLink('権利侵害・通報', '/infringement-policy'),
               _footerLink('外部送信', '/external-transmission'),
               _footerLink('お問い合わせ', '/contact'),
+              _footerLink('運営者情報', '/about'),
             ],
           ),
         ],

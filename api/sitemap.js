@@ -36,6 +36,7 @@ const FIXED_URLS = [
     lastmod: FIXED_LASTMOD,
   },
   { path: "/contact", changefreq: "monthly", priority: "0.4", lastmod: FIXED_LASTMOD },
+  { path: "/about", changefreq: "monthly", priority: "0.4", lastmod: FIXED_LASTMOD },
 ];
 
 const POSTS_INDEX_URL = {
