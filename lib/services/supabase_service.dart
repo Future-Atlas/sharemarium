@@ -1739,7 +1739,7 @@ class SupabaseService extends ChangeNotifier {
       final response = await _client!
           .from('post_replies')
           .select(
-            'id, post_id, profile_id, parent_reply_id, message, has_spoiler, created_at, '
+            'id, post_id, profile_id, parent_reply_id, message, has_spoiler, created_at, updated_at, '
             'profiles:profiles!post_replies_profile_id_fkey(username, user_id, avatar_url)',
           )
           .inFilter('post_id', filteredIds)
