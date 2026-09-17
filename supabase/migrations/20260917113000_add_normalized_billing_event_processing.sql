@@ -503,7 +503,7 @@ END;
 $$;
 
 CREATE OR REPLACE FUNCTION public.apply_normalized_charge_event(
-    webhook_event_id UUID,
+    input_webhook_event_id UUID,
     target_profile_id UUID,
     target_plan TEXT,
     target_billing_period TEXT,
@@ -531,7 +531,7 @@ BEGIN
     SELECT event.*
       INTO event_row
       FROM private.billing_webhook_events AS event
-     WHERE event.id = webhook_event_id
+     WHERE event.id = input_webhook_event_id
      FOR UPDATE;
 
     IF NOT FOUND THEN
@@ -540,7 +540,7 @@ BEGIN
     IF event_row.status IN ('processed', 'ignored') THEN
         SELECT charge.* INTO charge_row
           FROM private.billing_charges AS charge
-         WHERE charge.webhook_event_id = webhook_event_id
+         WHERE charge.webhook_event_id = input_webhook_event_id
          LIMIT 1;
         RETURN charge_row.id;
     END IF;
@@ -589,7 +589,7 @@ BEGIN
                    processed_at = timezone('utc'::text, now()),
                    last_error = NULL,
                    processing_note = 'out_of_order_charge_event'
-             WHERE id = webhook_event_id;
+             WHERE id = input_webhook_event_id;
             RETURN charge_row.id;
         END IF;
         IF charge_row.profile_id IS NOT NULL AND charge_row.profile_id <> target_profile_id THEN
@@ -604,7 +604,7 @@ BEGIN
 
         UPDATE private.billing_charges AS charge
            SET profile_id = COALESCE(charge.profile_id, target_profile_id),
-               webhook_event_id = webhook_event_id,
+               webhook_event_id = input_webhook_event_id,
                provider_customer_id = COALESCE(target_provider_customer_id, charge.provider_customer_id),
                provider_invoice_id = COALESCE(target_provider_invoice_id, charge.provider_invoice_id),
                status = target_status,
@@ -634,7 +634,7 @@ BEGIN
         )
         VALUES (
             target_profile_id,
-            webhook_event_id,
+            input_webhook_event_id,
             event_row.provider,
             target_provider_customer_id,
             btrim(target_provider_charge_id),
@@ -674,14 +674,14 @@ BEGIN
            processed_at = timezone('utc'::text, now()),
            last_error = NULL,
            processing_note = 'charge_state_applied'
-     WHERE id = webhook_event_id;
+     WHERE id = input_webhook_event_id;
 
     RETURN charge_row.id;
 END;
 $$;
 
 CREATE OR REPLACE FUNCTION public.apply_normalized_refund_event(
-    webhook_event_id UUID,
+    input_webhook_event_id UUID,
     target_provider_charge_id TEXT,
     target_provider_refund_id TEXT,
     target_amount_minor BIGINT,
@@ -706,7 +706,7 @@ BEGIN
     SELECT event.*
       INTO event_row
       FROM private.billing_webhook_events AS event
-     WHERE event.id = webhook_event_id
+     WHERE event.id = input_webhook_event_id
      FOR UPDATE;
 
     IF NOT FOUND THEN
@@ -715,7 +715,7 @@ BEGIN
     IF event_row.status IN ('processed', 'ignored') THEN
         SELECT refund.* INTO refund_row
           FROM private.billing_refunds AS refund
-         WHERE refund.webhook_event_id = webhook_event_id
+         WHERE refund.webhook_event_id = input_webhook_event_id
          LIMIT 1;
         RETURN refund_row.id;
     END IF;
@@ -787,7 +787,7 @@ BEGIN
                    processed_at = timezone('utc'::text, now()),
                    last_error = NULL,
                    processing_note = 'out_of_order_refund_event'
-             WHERE id = webhook_event_id;
+             WHERE id = input_webhook_event_id;
             RETURN refund_row.id;
         END IF;
         IF refund_row.charge_id <> charge_row.id
@@ -801,11 +801,11 @@ BEGIN
                    processed_at = timezone('utc'::text, now()),
                    last_error = NULL,
                    processing_note = 'terminal_refund_state'
-             WHERE id = webhook_event_id;
+             WHERE id = input_webhook_event_id;
             RETURN refund_row.id;
         END IF;
         UPDATE private.billing_refunds AS refund
-           SET webhook_event_id = webhook_event_id,
+           SET webhook_event_id = input_webhook_event_id,
                reason_code = target_reason_code,
                reason_detail = COALESCE(target_reason_detail, refund.reason_detail),
                status = target_status,
@@ -833,7 +833,7 @@ BEGIN
         )
         VALUES (
             charge_row.id,
-            webhook_event_id,
+            input_webhook_event_id,
             event_row.provider,
             btrim(target_provider_refund_id),
             target_amount_minor,
@@ -871,7 +871,7 @@ BEGIN
            processed_at = timezone('utc'::text, now()),
            last_error = NULL,
            processing_note = 'refund_state_applied'
-     WHERE id = webhook_event_id;
+     WHERE id = input_webhook_event_id;
 
     RETURN refund_row.id;
 END;
