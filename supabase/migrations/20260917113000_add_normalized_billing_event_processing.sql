@@ -50,6 +50,11 @@ ALTER TABLE private.subscription_entitlements
         REFERENCES private.billing_webhook_events(id) ON DELETE SET NULL,
     ADD COLUMN IF NOT EXISTS last_billing_event_order_at TIMESTAMP WITH TIME ZONE;
 
+ALTER TABLE private.billing_charges
+    ADD COLUMN IF NOT EXISTS last_billing_event_order_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE private.billing_refunds
+    ADD COLUMN IF NOT EXISTS last_billing_event_order_at TIMESTAMP WITH TIME ZONE;
+
 COMMENT ON COLUMN private.billing_webhook_events.event_type IS
     'Raw provider event type after signature verification.';
 COMMENT ON COLUMN private.billing_webhook_events.normalized_event_type IS
@@ -58,13 +63,13 @@ COMMENT ON COLUMN private.subscription_entitlements.last_billing_event_order_at 
     'Ordering timestamp of the most recent subscription lifecycle event applied to this entitlement.';
 
 CREATE OR REPLACE FUNCTION public.claim_billing_webhook_event(
-    billing_provider TEXT,
-    provider_event_id TEXT,
-    provider_event_type TEXT,
-    normalized_event_type TEXT,
-    target_profile_id UUID DEFAULT NULL,
-    payload_sha256 TEXT DEFAULT NULL,
-    provider_created_at TIMESTAMP WITH TIME ZONE DEFAULT NULL
+    incoming_provider TEXT,
+    incoming_event_id TEXT,
+    incoming_event_type TEXT,
+    incoming_normalized_type TEXT,
+    incoming_profile_id UUID DEFAULT NULL,
+    incoming_payload_sha256 TEXT DEFAULT NULL,
+    incoming_provider_created_at TIMESTAMP WITH TIME ZONE DEFAULT NULL
 )
 RETURNS TABLE (
     webhook_event_id UUID,
@@ -79,51 +84,51 @@ DECLARE
     event_row private.billing_webhook_events%ROWTYPE;
     now_utc TIMESTAMP WITH TIME ZONE := timezone('utc'::text, now());
 BEGIN
-    IF billing_provider IS NULL OR char_length(btrim(billing_provider)) NOT BETWEEN 1 AND 64 THEN
-        RAISE EXCEPTION 'invalid_billing_provider' USING ERRCODE = '22023';
+    IF incoming_provider IS NULL OR char_length(btrim(incoming_provider)) NOT BETWEEN 1 AND 64 THEN
+        RAISE EXCEPTION 'invalid_incoming_provider' USING ERRCODE = '22023';
     END IF;
-    IF provider_event_id IS NULL OR char_length(btrim(provider_event_id)) NOT BETWEEN 1 AND 255 THEN
-        RAISE EXCEPTION 'invalid_provider_event_id' USING ERRCODE = '22023';
+    IF incoming_event_id IS NULL OR char_length(btrim(incoming_event_id)) NOT BETWEEN 1 AND 255 THEN
+        RAISE EXCEPTION 'invalid_incoming_event_id' USING ERRCODE = '22023';
     END IF;
-    IF provider_event_type IS NULL OR char_length(btrim(provider_event_type)) NOT BETWEEN 1 AND 120 THEN
-        RAISE EXCEPTION 'invalid_provider_event_type' USING ERRCODE = '22023';
+    IF incoming_event_type IS NULL OR char_length(btrim(incoming_event_type)) NOT BETWEEN 1 AND 120 THEN
+        RAISE EXCEPTION 'invalid_incoming_event_type' USING ERRCODE = '22023';
     END IF;
-    IF normalized_event_type IS NULL THEN
-        RAISE EXCEPTION 'normalized_event_type_required' USING ERRCODE = '22023';
+    IF incoming_normalized_type IS NULL THEN
+        RAISE EXCEPTION 'incoming_normalized_type_required' USING ERRCODE = '22023';
     END IF;
-    IF payload_sha256 IS NOT NULL AND payload_sha256 !~ '^[0-9A-Fa-f]{64}$' THEN
-        RAISE EXCEPTION 'invalid_payload_sha256' USING ERRCODE = '22023';
+    IF incoming_payload_sha256 IS NOT NULL AND incoming_payload_sha256 !~ '^[0-9A-Fa-f]{64}$' THEN
+        RAISE EXCEPTION 'invalid_incoming_payload_sha256' USING ERRCODE = '22023';
     END IF;
 
     INSERT INTO private.billing_webhook_events (
         provider,
-        provider_event_id,
+        incoming_event_id,
         event_type,
-        normalized_event_type,
+        incoming_normalized_type,
         profile_id,
-        payload_sha256,
+        incoming_payload_sha256,
         status,
         attempt_count,
-        provider_created_at,
+        incoming_provider_created_at,
         processing_started_at,
         last_error,
         processing_note
     )
     VALUES (
-        btrim(billing_provider),
-        btrim(provider_event_id),
-        btrim(provider_event_type),
-        normalized_event_type,
-        target_profile_id,
-        lower(payload_sha256),
+        btrim(incoming_provider),
+        btrim(incoming_event_id),
+        btrim(incoming_event_type),
+        incoming_normalized_type,
+        incoming_profile_id,
+        lower(incoming_payload_sha256),
         'processing',
         1,
-        provider_created_at,
+        incoming_provider_created_at,
         now_utc,
         NULL,
         NULL
     )
-    ON CONFLICT (provider, provider_event_id) DO NOTHING
+    ON CONFLICT (provider, incoming_event_id) DO NOTHING
     RETURNING * INTO event_row;
 
     IF event_row.id IS NOT NULL THEN
@@ -134,21 +139,21 @@ BEGIN
     SELECT event.*
       INTO event_row
       FROM private.billing_webhook_events AS event
-     WHERE event.provider = btrim(billing_provider)
-       AND event.provider_event_id = btrim(provider_event_id)
+     WHERE event.provider = btrim(incoming_provider)
+       AND event.incoming_event_id = btrim(incoming_event_id)
      FOR UPDATE;
 
-    IF event_row.event_type <> btrim(provider_event_type)
-       OR event_row.normalized_event_type IS DISTINCT FROM normalized_event_type
+    IF event_row.event_type <> btrim(incoming_event_type)
+       OR event_row.incoming_normalized_type IS DISTINCT FROM incoming_normalized_type
        OR (
             event_row.profile_id IS NOT NULL
-            AND target_profile_id IS NOT NULL
-            AND event_row.profile_id <> target_profile_id
+            AND incoming_profile_id IS NOT NULL
+            AND event_row.profile_id <> incoming_profile_id
        )
        OR (
-            event_row.payload_sha256 IS NOT NULL
-            AND payload_sha256 IS NOT NULL
-            AND lower(event_row.payload_sha256) <> lower(payload_sha256)
+            event_row.incoming_payload_sha256 IS NOT NULL
+            AND incoming_payload_sha256 IS NOT NULL
+            AND lower(event_row.incoming_payload_sha256) <> lower(incoming_payload_sha256)
        ) THEN
         RAISE EXCEPTION 'billing_event_identity_mismatch'
             USING ERRCODE = 'P0001';
@@ -169,10 +174,10 @@ BEGIN
     END IF;
 
     UPDATE private.billing_webhook_events AS event
-       SET normalized_event_type = COALESCE(event.normalized_event_type, normalized_event_type),
-           profile_id = COALESCE(event.profile_id, target_profile_id),
-           payload_sha256 = COALESCE(event.payload_sha256, lower(payload_sha256)),
-           provider_created_at = COALESCE(event.provider_created_at, provider_created_at),
+       SET incoming_normalized_type = COALESCE(event.incoming_normalized_type, incoming_normalized_type),
+           profile_id = COALESCE(event.profile_id, incoming_profile_id),
+           incoming_payload_sha256 = COALESCE(event.incoming_payload_sha256, lower(incoming_payload_sha256)),
+           incoming_provider_created_at = COALESCE(event.incoming_provider_created_at, incoming_provider_created_at),
            status = 'processing',
            attempt_count = event.attempt_count + 1,
            processing_started_at = now_utc,
@@ -506,6 +511,7 @@ DECLARE
     event_row private.billing_webhook_events%ROWTYPE;
     charge_row private.billing_charges%ROWTYPE;
     target_status TEXT;
+    event_order_at TIMESTAMP WITH TIME ZONE;
 BEGIN
     SELECT event.*
       INTO event_row
@@ -551,6 +557,7 @@ BEGIN
     IF target_status IS NULL THEN
         RAISE EXCEPTION 'unsupported_normalized_charge_event' USING ERRCODE = '22023';
     END IF;
+    event_order_at := COALESCE(event_row.provider_created_at, event_row.received_at);
 
     SELECT charge.*
       INTO charge_row
@@ -560,6 +567,16 @@ BEGIN
      FOR UPDATE;
 
     IF FOUND THEN
+        IF charge_row.last_billing_event_order_at IS NOT NULL
+           AND event_order_at < charge_row.last_billing_event_order_at THEN
+            UPDATE private.billing_webhook_events
+               SET status = 'ignored',
+                   processed_at = timezone('utc'::text, now()),
+                   last_error = NULL,
+                   processing_note = 'out_of_order_charge_event'
+             WHERE id = webhook_event_id;
+            RETURN charge_row.id;
+        END IF;
         IF charge_row.profile_id IS NOT NULL AND charge_row.profile_id <> target_profile_id THEN
             RAISE EXCEPTION 'billing_charge_profile_mismatch' USING ERRCODE = 'P0001';
         END IF;
@@ -578,7 +595,8 @@ BEGIN
                status = target_status,
                charged_at = COALESCE(target_charged_at, charge.charged_at),
                period_start = COALESCE(target_period_start, charge.period_start),
-               period_end = COALESCE(target_period_end, charge.period_end)
+               period_end = COALESCE(target_period_end, charge.period_end),
+               last_billing_event_order_at = event_order_at
          WHERE charge.id = charge_row.id
          RETURNING charge.* INTO charge_row;
     ELSE
@@ -596,7 +614,8 @@ BEGIN
             status,
             charged_at,
             period_start,
-            period_end
+            period_end,
+            last_billing_event_order_at
         )
         VALUES (
             target_profile_id,
@@ -612,7 +631,8 @@ BEGIN
             target_status,
             target_charged_at,
             target_period_start,
-            target_period_end
+            target_period_end,
+            event_order_at
         )
         RETURNING * INTO charge_row;
     END IF;
@@ -650,6 +670,7 @@ DECLARE
     refund_row private.billing_refunds%ROWTYPE;
     target_status TEXT;
     succeeded_total BIGINT;
+    event_order_at TIMESTAMP WITH TIME ZONE;
 BEGIN
     SELECT event.*
       INTO event_row
@@ -696,6 +717,7 @@ BEGIN
     IF target_status IS NULL THEN
         RAISE EXCEPTION 'unsupported_normalized_refund_event' USING ERRCODE = '22023';
     END IF;
+    event_order_at := COALESCE(event_row.provider_created_at, event_row.received_at);
 
     SELECT charge.*
       INTO charge_row
@@ -727,6 +749,16 @@ BEGIN
      FOR UPDATE;
 
     IF FOUND THEN
+        IF refund_row.last_billing_event_order_at IS NOT NULL
+           AND event_order_at < refund_row.last_billing_event_order_at THEN
+            UPDATE private.billing_webhook_events
+               SET status = 'ignored',
+                   processed_at = timezone('utc'::text, now()),
+                   last_error = NULL,
+                   processing_note = 'out_of_order_refund_event'
+             WHERE id = webhook_event_id;
+            RETURN refund_row.id;
+        END IF;
         IF refund_row.charge_id <> charge_row.id
            OR refund_row.amount_minor <> target_amount_minor
            OR refund_row.currency <> upper(target_currency) THEN
@@ -741,7 +773,8 @@ BEGIN
                     WHEN target_status = 'succeeded'
                         THEN COALESCE(target_completed_at, refund.completed_at, timezone('utc'::text, now()))
                     ELSE target_completed_at
-               END
+               END,
+               last_billing_event_order_at = event_order_at
          WHERE refund.id = refund_row.id
          RETURNING refund.* INTO refund_row;
     ELSE
@@ -755,7 +788,8 @@ BEGIN
             reason_code,
             reason_detail,
             status,
-            completed_at
+            completed_at,
+            last_billing_event_order_at
         )
         VALUES (
             charge_row.id,
@@ -771,7 +805,8 @@ BEGIN
                 WHEN target_status = 'succeeded'
                     THEN COALESCE(target_completed_at, timezone('utc'::text, now()))
                 ELSE target_completed_at
-            END
+            END,
+            event_order_at
         )
         RETURNING * INTO refund_row;
     END IF;
