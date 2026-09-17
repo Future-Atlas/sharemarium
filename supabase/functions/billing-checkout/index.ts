@@ -91,7 +91,6 @@ Deno.serve(async (request) => {
     const trialUsed = context.trial_used === true
     const successUrl = new URL(appUrl)
     successUrl.searchParams.set('billing_checkout', 'success')
-    successUrl.searchParams.set('session_id', '{CHECKOUT_SESSION_ID}')
     const cancelUrl = new URL(appUrl)
     cancelUrl.searchParams.set('billing_checkout', 'canceled')
 
