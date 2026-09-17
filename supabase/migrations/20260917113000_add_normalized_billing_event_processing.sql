@@ -380,6 +380,7 @@ BEGIN
             UPDATE private.subscription_entitlements
                SET scheduled_plan = target_scheduled_plan,
                    scheduled_plan_effective_at = target_scheduled_effective_at,
+                   cancel_at_period_end = false,
                    billing_provider = event_row.provider,
                    provider_customer_id = COALESCE(target_provider_customer_id, provider_customer_id),
                    last_billing_event_id = webhook_event_id,
@@ -390,6 +391,8 @@ BEGIN
         WHEN 'subscription.cancel_scheduled' THEN
             UPDATE private.subscription_entitlements
                SET cancel_at_period_end = true,
+                   scheduled_plan = NULL,
+                   scheduled_plan_effective_at = NULL,
                    current_period_end = COALESCE(target_period_end, current_period_end),
                    expires_at = COALESCE(target_period_end, expires_at),
                    billing_provider = event_row.provider,
