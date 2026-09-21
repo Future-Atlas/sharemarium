@@ -103,5 +103,5 @@ jobs:
           if [[ "$DEPLOY_MODE" == "plan" ]]; then
             printf '\nPlan only: no migrations or functions were deployed.\n' >> "$GITHUB_STEP_SUMMARY"
           else
-            printf '\nMigrations and all three Edge Functions deployed successfully. Production was not targeted.\n' >> "$GITHUB_STEP_SUMMARY"
+            printf '\nMigrations and all approved Edge Functions deployed successfully. Production was not targeted.\n' >> "$GITHUB_STEP_SUMMARY"
           fi

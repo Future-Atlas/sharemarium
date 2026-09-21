@@ -43,3 +43,15 @@ jobs:
 
       - name: Test Vercel APIs
         run: npm run test:api
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Type-check billing Edge Functions
+        # This repository has package.json, so Deno 2 otherwise defaults to
+        # manual node_modules mode. The Edge Functions use npm: imports that
+        # are not installed by npm ci; auto mode lets Deno resolve them for
+        # this isolated type-check without changing runtime configuration.
+        run: deno check --node-modules-dir=auto supabase/functions/billing-checkout/index.ts supabase/functions/billing-webhook/index.ts

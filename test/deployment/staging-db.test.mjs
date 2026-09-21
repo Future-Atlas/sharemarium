@@ -48,7 +48,7 @@ test('plan only links and previews, without applying or deploying functions', ()
   ]);
 });
 
-test('apply previews first and deploys only the three approved staging functions', () => {
+test('apply previews first and deploys only the approved staging functions', () => {
   const calls = [];
   deploy({ mode: 'apply', env: environment(), run: args => calls.push(args), readLinkedProject: () => `${STAGING_PROJECT}\n` });
   assert.deepEqual(calls, [
