@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/subscription_state.dart';
 import '../services/subscription_checkout_service.dart';
+import '../services/subscription_management_service.dart';
 import '../services/subscription_state_service.dart';
 
 typedef SubscriptionStateLoader = Future<SubscriptionState?> Function();
@@ -12,15 +13,20 @@ typedef SubscriptionCheckoutStarter =
       required SubscriptionBillingPeriod billingPeriod,
     });
 
+typedef SubscriptionCancellationStarter =
+    Future<SubscriptionCancellationResult> Function();
+
 class SubscriptionStatusScreen extends StatefulWidget {
   const SubscriptionStatusScreen({
     super.key,
     this.loadState,
     this.startCheckout,
+    this.cancelSubscription,
   });
 
   final SubscriptionStateLoader? loadState;
   final SubscriptionCheckoutStarter? startCheckout;
+  final SubscriptionCancellationStarter? cancelSubscription;
 
   @override
   State<SubscriptionStatusScreen> createState() =>
@@ -34,6 +40,7 @@ class _SubscriptionStatusScreenState extends State<SubscriptionStatusScreen> {
   SubscriptionBillingPeriod _billingPeriod =
       SubscriptionBillingPeriod.monthly;
   SubscriptionPlanTier? _startingPlan;
+  bool _canceling = false;
 
   @override
   void initState() {
@@ -97,6 +104,76 @@ class _SubscriptionStatusScreenState extends State<SubscriptionStatusScreen> {
     }
   }
 
+  Future<void> _cancelSubscription(SubscriptionState state) async {
+    if (_canceling) return;
+
+    final immediate = state.isTrialing;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(immediate ? '無料体験を解約しますか？' : '契約を解約しますか？'),
+        content: Text(
+          immediate
+              ? '無料体験は直ちに終了し、Freeプランへ戻ります。この無料体験は再利用できません。'
+              : state.currentPeriodEnd == null
+                  ? '自動更新を停止します。現在の利用期間が終了するまでは有料機能を利用できます。'
+                  : '${_formatDate(state.currentPeriodEnd!)}で自動更新を停止します。それまでは有料機能を利用できます。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('戻る'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('解約する'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _canceling = true);
+    try {
+      final starter =
+          widget.cancelSubscription ??
+          SubscriptionManagementService.cancelCurrentSubscription;
+      final result = await starter();
+      if (!mounted) return;
+
+      final message = switch (result.mode) {
+        SubscriptionCancellationMode.immediate =>
+          '無料体験を解約しました。Freeプランへ移行します。',
+        SubscriptionCancellationMode.periodEnd =>
+          result.effectiveAt == null
+              ? '自動更新を停止しました。現在の利用期間終了後にFreeへ移行します。'
+              : '${_formatDate(result.effectiveAt!)}で自動更新を停止します。',
+        SubscriptionCancellationMode.alreadyScheduled =>
+          'すでに解約予約済みです。',
+        SubscriptionCancellationMode.alreadyCanceled =>
+          '契約はすでに終了しています。',
+      };
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+      await _load();
+    } on SubscriptionCancellationException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('解約手続きを完了できませんでした。時間をおいて再度お試しください。'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _canceling = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -155,6 +232,14 @@ class _SubscriptionStatusScreenState extends State<SubscriptionStatusScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _CurrentSubscriptionCard(state: state),
+        if (state.isPaid && !state.cancelAtPeriodEnd) ...[
+          const SizedBox(height: 18),
+          _CancellationCard(
+            state: state,
+            canceling: _canceling,
+            onCancel: () => _cancelSubscription(state),
+          ),
+        ],
         if (state.effectivePlan == SubscriptionPlanTier.free) ...[
           const SizedBox(height: 18),
           _CheckoutControls(
@@ -222,6 +307,60 @@ class _SubscriptionStatusScreenState extends State<SubscriptionStatusScreen> {
         ),
         const SizedBox(height: 24),
       ],
+    );
+  }
+}
+
+class _CancellationCard extends StatelessWidget {
+  const _CancellationCard({
+    required this.state,
+    required this.canceling,
+    required this.onCancel,
+  });
+
+  final SubscriptionState state;
+  final bool canceling;
+  final VoidCallback onCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    final immediate = state.isTrialing;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '契約の解約',
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              immediate
+                  ? '無料体験中の解約は即時反映され、Freeプランへ戻ります。'
+                  : state.currentPeriodEnd == null
+                      ? '解約すると自動更新を停止し、現在の利用期間終了後にFreeへ移行します。'
+                      : '${_formatDate(state.currentPeriodEnd!)}までは現在のプランを利用できます。',
+              style: const TextStyle(fontSize: 12, height: 1.5),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: canceling ? null : onCancel,
+              icon: canceling
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.cancel_outlined),
+              label: Text(immediate ? '無料体験を解約' : '次回更新日で解約'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
