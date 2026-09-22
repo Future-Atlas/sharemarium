@@ -118,9 +118,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('年額で申し込む'), findsNWidgets(2));
 
-    await tester.tap(
-      find.widgetWithText(FilledButton, '年額で申し込む').first,
-    );
+    final annualCheckoutButton =
+        find.widgetWithText(FilledButton, '年額で申し込む').first;
+    await tester.ensureVisible(annualCheckoutButton);
+    await tester.pumpAndSettle();
+    await tester.tap(annualCheckoutButton);
     await tester.pumpAndSettle();
 
     expect(requestedPlan, SubscriptionPlanTier.plus);
@@ -186,9 +188,11 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(
-      find.widgetWithText(FilledButton, '月額で申し込む').first,
-    );
+    final monthlyCheckoutButton =
+        find.widgetWithText(FilledButton, '月額で申し込む').first;
+    await tester.ensureVisible(monthlyCheckoutButton);
+    await tester.pumpAndSettle();
+    await tester.tap(monthlyCheckoutButton);
     await tester.pumpAndSettle();
 
     expect(find.text('決済設定を確認してください。'), findsOneWidget);
