@@ -394,6 +394,9 @@ verify_jwt = true
 [functions.billing-cancel-subscription]
 verify_jwt = true
 
+[functions.billing-change-plan]
+verify_jwt = true
+
 # Stripe cannot send a Supabase JWT. This endpoint verifies the raw-body
 # Stripe-Signature HMAC before parsing or touching the database.
 [functions.billing-webhook]
