@@ -284,6 +284,10 @@ async function normalizeEvent(
     )
     if (!invoicePayment) {
       if (type === 'charge.succeeded') {
+        // Checkout completion and invoice-payment association can be observed
+        // after the successful Charge event. Fail this delivery deliberately so
+        // Stripe retries instead of permanently dropping a successful charge
+        // from Sharemarium's billing ledger.
         throw new Error('Successful Stripe charge is not yet linked to an invoice payment')
       }
       return {
