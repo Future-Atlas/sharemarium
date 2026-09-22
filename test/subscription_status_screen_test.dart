@@ -302,4 +302,144 @@ void main() {
     expect(find.textContaining('Freeプランへ移行します'), findsOneWidget);
   });
 
+
+  testWidgets('paid user can schedule a plan change for the renewal date', (
+    tester,
+  ) async {
+    final state = SubscriptionState(
+      effectivePlan: SubscriptionPlanTier.plus,
+      scheduledPlan: null,
+      scheduledPlanEffectiveAt: null,
+      currentPeriodEnd: DateTime.utc(2030, 5, 1),
+      paymentGraceUntil: null,
+      trialEndsAt: null,
+      trialUsed: true,
+      cancelAtPeriodEnd: false,
+      billingStatus: 'active',
+    );
+    SubscriptionPlanTier? requestedPlan;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SubscriptionStatusScreen(
+          loadState: () async => state,
+          changePlan: (targetPlan) async {
+            requestedPlan = targetPlan;
+            return SubscriptionPlanChangeResult(
+              scheduledPlan: targetPlan,
+              effectiveAt: DateTime.utc(2030, 5, 1),
+            );
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final changeButton = find.widgetWithText(
+      OutlinedButton,
+      '次回更新日から変更',
+    );
+    expect(changeButton, findsOneWidget);
+    await tester.scrollUntilVisible(changeButton, 500);
+    await tester.pumpAndSettle();
+    await tester.tap(changeButton);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Sharemarium Premiumへ変更しますか？'), findsOneWidget);
+    expect(find.textContaining('2030年5月1日の次回更新日から'), findsOneWidget);
+
+    await tester.tap(find.text('変更を予約'));
+    await tester.pumpAndSettle();
+
+    expect(requestedPlan, SubscriptionPlanTier.premium);
+    expect(
+      find.textContaining('2030年5月1日からSharemarium Premiumへ変更します'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('scheduled or past-due subscriptions cannot schedule another plan change', (
+    tester,
+  ) async {
+    Future<void> pumpState(SubscriptionState state) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: SubscriptionStatusScreen(loadState: () async => state),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    await pumpState(
+      SubscriptionState(
+        effectivePlan: SubscriptionPlanTier.plus,
+        scheduledPlan: SubscriptionPlanTier.premium,
+        scheduledPlanEffectiveAt: DateTime.utc(2030, 6, 1),
+        currentPeriodEnd: DateTime.utc(2030, 6, 1),
+        paymentGraceUntil: null,
+        trialEndsAt: null,
+        trialUsed: true,
+        cancelAtPeriodEnd: false,
+        billingStatus: 'active',
+      ),
+    );
+    expect(find.text('次回更新日から変更'), findsNothing);
+
+    await pumpState(
+      SubscriptionState(
+        effectivePlan: SubscriptionPlanTier.plus,
+        scheduledPlan: null,
+        scheduledPlanEffectiveAt: null,
+        currentPeriodEnd: DateTime.utc(2030, 6, 1),
+        paymentGraceUntil: DateTime.utc(2030, 6, 8),
+        trialEndsAt: null,
+        trialUsed: true,
+        cancelAtPeriodEnd: false,
+        billingStatus: 'past_due',
+      ),
+    );
+    expect(find.text('次回更新日から変更'), findsNothing);
+  });
+
+  testWidgets('trial user schedules plan change for trial end', (
+    tester,
+  ) async {
+    final state = SubscriptionState(
+      effectivePlan: SubscriptionPlanTier.premium,
+      scheduledPlan: null,
+      scheduledPlanEffectiveAt: null,
+      currentPeriodEnd: DateTime.utc(2030, 7, 10),
+      paymentGraceUntil: null,
+      trialEndsAt: DateTime.utc(2030, 7, 10),
+      trialUsed: true,
+      cancelAtPeriodEnd: false,
+      billingStatus: 'trialing',
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SubscriptionStatusScreen(
+          loadState: () async => state,
+          changePlan: (targetPlan) async => SubscriptionPlanChangeResult(
+            scheduledPlan: targetPlan,
+            effectiveAt: DateTime.utc(2030, 7, 10),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final changeButton = find.widgetWithText(
+      OutlinedButton,
+      '無料体験終了後に変更',
+    );
+    expect(changeButton, findsOneWidget);
+    await tester.scrollUntilVisible(changeButton, 500);
+    await tester.pumpAndSettle();
+    await tester.tap(changeButton);
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('2030年7月10日の無料体験終了時に'), findsOneWidget);
+  });
+
 }
