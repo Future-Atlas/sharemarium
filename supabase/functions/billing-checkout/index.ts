@@ -2,6 +2,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2'
 import {
   formBody,
   requireStripePrice,
+  sha256Hex,
   STRIPE_PROVIDER,
 } from '../_shared/stripe_billing.mjs'
 
@@ -45,6 +46,11 @@ Deno.serve(async (request) => {
   const body = await request.json().catch(() => null)
   const plan = body?.plan?.toString().toLowerCase()
   const billingPeriod = body?.billingPeriod?.toString().toLowerCase()
+  const requestId = body?.requestId?.toString().trim().toLowerCase() ?? ''
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(requestId)) {
+    return json({ error: 'A valid checkout request ID is required' }, 400)
+  }
+
   let priceId: string
   try {
     priceId = requireStripePrice(stripeEnv(), plan, billingPeriod)
@@ -73,10 +79,11 @@ Deno.serve(async (request) => {
   let customerId = context.provider_customer_id?.toString() || null
   try {
     if (!customerId) {
+      const customerKey = (await sha256Hex(user.id)).slice(0, 32)
       const customer = await stripeRequest('/v1/customers', stripeSecretKey, formBody([
         ['email', user.email],
         ['metadata[sharemarium_profile_id]', user.id],
-      ]), `sharemarium-customer-${user.id}`)
+      ]), `sharemarium-customer-${customerKey}`)
       customerId = customer.id
       if (!customerId) throw new Error('Stripe customer response did not include an id')
       const { error: linkError } = await admin.rpc('link_billing_provider_identity', {
@@ -115,7 +122,7 @@ Deno.serve(async (request) => {
       '/v1/checkout/sessions',
       stripeSecretKey,
       formBody(entries),
-      `sharemarium-checkout-${user.id}-${plan}-${billingPeriod}-${trialUsed ? 'paid' : 'trial'}`,
+      `sharemarium-checkout-${requestId}`,
     )
     if (!session.url || !session.id) throw new Error('Stripe Checkout response is incomplete')
     return json({ checkoutUrl: session.url, sessionId: session.id, trialDays: trialUsed ? 0 : 10 })
