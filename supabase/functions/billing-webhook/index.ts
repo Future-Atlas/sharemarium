@@ -127,8 +127,8 @@ Deno.serve(async (request) => {
           target_profile_id: profileId,
           target_plan: outcome.plan,
           target_period_end: outcome.periodEnd,
-          target_scheduled_plan: null,
-          target_scheduled_effective_at: null,
+          target_scheduled_plan: outcome.scheduledPlan ?? null,
+          target_scheduled_effective_at: outcome.scheduledEffectiveAt ?? null,
           target_payment_grace_until: null,
           target_provider_customer_id: outcome.customerId,
         })
@@ -155,6 +155,53 @@ async function normalizeEvent(
   object: any,
   stripeSecretKey?: string,
 ): Promise<any> {
+  if (type === 'subscription_schedule.updated') {
+    const profileId = profileIdFromMetadata(object)
+    const customerId = stripeCustomerId(object)
+    if (!profileId || !customerId) {
+      throw new Error('Stripe subscription schedule is missing Sharemarium identity metadata')
+    }
+
+    const effectiveUnix = Number(object?.metadata?.sharemarium_effective_at)
+    const phases = Array.isArray(object?.phases) ? object.phases : []
+    const currentPhaseStart = Number(object?.current_phase?.start_date)
+    if (!Number.isFinite(effectiveUnix) || effectiveUnix <= 0) {
+      return {
+        action: 'ignore', normalizedType: 'ignored', profileId,
+        customerId, note: 'subscription_schedule_without_target_effective_at_ignored',
+      }
+    }
+    if (Number.isFinite(currentPhaseStart) && currentPhaseStart >= effectiveUnix) {
+      return {
+        action: 'ignore', normalizedType: 'ignored', profileId,
+        customerId, note: 'subscription_schedule_target_phase_already_started',
+      }
+    }
+
+    const futurePhase =
+      phases.find((phase: any) => Number(phase?.start_date) === effectiveUnix) ??
+      phases.find((phase: any) => Number(phase?.start_date) > currentPhaseStart)
+    const futureItem = Array.isArray(futurePhase?.items) ? futurePhase.items[0] : null
+    const targetPrice = describeStripePrice(stripeEnv(), stripeObjectId(futureItem?.price))
+    const scheduledEffectiveAt = toIsoFromUnix(futurePhase?.start_date)
+    const metadataPlan = object?.metadata?.sharemarium_target_plan?.toString()
+
+    if (!targetPrice || !scheduledEffectiveAt) {
+      throw new Error('Stripe subscription schedule has an unknown future price or date')
+    }
+    if (metadataPlan && metadataPlan !== targetPrice.plan) {
+      throw new Error('Stripe subscription schedule target plan metadata does not match its price')
+    }
+
+    return {
+      action: 'apply', processor: 'subscription',
+      normalizedType: 'subscription.plan_change_scheduled',
+      profileId, customerId, plan: null, periodEnd: null,
+      scheduledPlan: targetPrice.plan,
+      scheduledEffectiveAt,
+    }
+  }
+
   if (type.startsWith('customer.subscription.')) {
     const customerId = stripeCustomerId(object)
     const subscriptionId = object?.id?.toString()
@@ -205,6 +252,18 @@ async function normalizeEvent(
           customerId, plan: null, periodEnd,
         }
       }
+
+      if (price && periodEnd && ['active', 'trialing'].includes(object.status)) {
+        const context = await billingContextForProfile(admin, profileId)
+        if (context?.effective_plan && context.effective_plan !== price.plan) {
+          return {
+            action: 'apply', processor: 'subscription',
+            normalizedType: 'subscription.active', profileId,
+            customerId, plan: price.plan, periodEnd,
+          }
+        }
+      }
+
       return {
         action: 'ignore', normalizedType: 'ignored', profileId,
         customerId, plan: null, periodEnd: null,
@@ -235,10 +294,14 @@ async function normalizeEvent(
       if (!price || !periodEnd) {
         throw new Error('Paid Stripe invoice uses an unknown price or period')
       }
+      const context = await billingContextForProfile(admin, profileId)
       return {
         action: 'apply', processor: 'subscription',
-        normalizedType: 'subscription.payment_recovered', profileId,
-        customerId, plan: price.plan, periodEnd,
+        normalizedType:
+          context?.effective_plan && context.effective_plan !== price.plan
+            ? 'subscription.active'
+            : 'subscription.payment_recovered',
+        profileId, customerId, plan: price.plan, periodEnd,
       }
     }
 
@@ -406,6 +469,15 @@ async function resolveProfile(
   return chargeCustomerId
     ? await profileForCustomer(admin, chargeCustomerId)
     : null
+}
+
+async function billingContextForProfile(admin: any, profileId: string) {
+  const { data, error } = await admin.rpc('billing_provider_context', {
+    target_profile: profileId,
+    target_provider: STRIPE_PROVIDER,
+  })
+  if (error) throw error
+  return Array.isArray(data) ? data[0] : data
 }
 
 async function profileForCustomer(admin: any, customerId: string) {
