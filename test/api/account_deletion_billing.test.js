@@ -48,6 +48,12 @@ test('Stripe lookup failures block destructive account deletion', () => {
   assert.match(source, /rollbackDeletionPreparation/)
 })
 
+test('missing Stripe secret blocks deletion when a provider subscription exists', () => {
+  assert.match(source, /if \(!stripeSecretKey\)/)
+  assert.match(source, /status: 503/)
+  assert.match(source, /rollbackDeletionPreparation/)
+})
+
 test('Stripe subscription DELETE relies on HTTP idempotency without proration flags', () => {
   assert.doesNotMatch(source, /Idempotency-Key/)
   assert.doesNotMatch(source, /invoice_now=true/)
