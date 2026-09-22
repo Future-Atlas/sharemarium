@@ -7,10 +7,13 @@ if (!globalThis.crypto) globalThis.crypto = webcrypto
 const {
   describeStripePrice,
   invoicePeriod,
+  normalizeStripeChargeEventType,
   normalizeStripeRefundReason,
   normalizeStripeRefundStatus,
   profileIdFromMetadata,
   requireStripePrice,
+  stripePaymentIntentId,
+  stripeRefundChargeId,
   subscriptionPeriodEnd,
   verifyStripeSignature,
 } = await import('../../supabase/functions/_shared/stripe_billing.mjs')
@@ -69,6 +72,17 @@ test('extracts invoice period from subscription line', () => {
     }),
     { start: 100, end: 200 },
   )
+})
+
+test('maps Stripe charge events and payment identities conservatively', () => {
+  assert.equal(normalizeStripeChargeEventType('charge.pending'), 'charge.pending')
+  assert.equal(normalizeStripeChargeEventType('charge.succeeded'), 'charge.paid')
+  assert.equal(normalizeStripeChargeEventType('charge.failed'), 'charge.failed')
+  assert.equal(normalizeStripeChargeEventType('charge.expired'), 'charge.void')
+  assert.equal(normalizeStripeChargeEventType('charge.updated'), null)
+  assert.equal(stripePaymentIntentId({ payment_intent: 'pi_test' }), 'pi_test')
+  assert.equal(stripePaymentIntentId({ payment_intent: { id: 'pi_expanded' } }), 'pi_expanded')
+  assert.equal(stripeRefundChargeId({ charge: 'ch_test' }), 'ch_test')
 })
 
 test('maps Stripe refund states and reasons conservatively', () => {
