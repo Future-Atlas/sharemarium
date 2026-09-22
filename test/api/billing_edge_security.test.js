@@ -27,6 +27,12 @@ test('Stripe Checkout authenticates the Supabase user before creating a Checkout
   assert.ok(createCheckout > authenticate)
   assert.match(checkout, /effective_plan !== 'free'/)
   assert.match(checkout, /subscription_data\[trial_period_days\].*10/)
+  assert.match(checkout, /valid checkout request ID is required/)
+  assert.match(checkout, /sharemarium-checkout-\$\{requestId\}/)
+  assert.doesNotMatch(
+    checkout,
+    /sharemarium-checkout-\$\{user\.id\}-\$\{plan\}/,
+  )
 })
 
 test('staging and production deploy only explicitly approved billing functions', () => {
