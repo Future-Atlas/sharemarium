@@ -51,3 +51,8 @@ env.json
 node_modules/
 .vercel
 .env*
+
+# Android release signing secrets
+/android/key.properties
+**/*.jks
+**/*.keystore
