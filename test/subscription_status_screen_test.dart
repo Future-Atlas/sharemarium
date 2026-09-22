@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sharemarium/models/subscription_state.dart';
 import 'package:sharemarium/screens/subscription_status_screen.dart';
 import 'package:sharemarium/services/subscription_checkout_service.dart';
+import 'package:sharemarium/services/subscription_management_service.dart';
 
 void main() {
   testWidgets('shows current Premium state and scheduled downgrade', (
@@ -198,4 +199,107 @@ void main() {
     expect(find.text('決済設定を確認してください。'), findsOneWidget);
     expect(find.text('Free'), findsWidgets);
   });
+
+  testWidgets('paid user can schedule cancellation for the renewal date', (
+    tester,
+  ) async {
+    final state = SubscriptionState(
+      effectivePlan: SubscriptionPlanTier.plus,
+      scheduledPlan: null,
+      scheduledPlanEffectiveAt: null,
+      currentPeriodEnd: DateTime.utc(2030, 4, 1),
+      paymentGraceUntil: null,
+      trialEndsAt: null,
+      trialUsed: true,
+      cancelAtPeriodEnd: false,
+      billingStatus: 'active',
+    );
+    var cancellationCalls = 0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SubscriptionStatusScreen(
+          loadState: () async => state,
+          cancelSubscription: () async {
+            cancellationCalls += 1;
+            return SubscriptionCancellationResult(
+              mode: SubscriptionCancellationMode.periodEnd,
+              effectiveAt: DateTime.utc(2030, 4, 1),
+            );
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final cancelButton = find.widgetWithText(
+      OutlinedButton,
+      '次回更新日で解約',
+    );
+    await tester.ensureVisible(cancelButton);
+    await tester.pumpAndSettle();
+    await tester.tap(cancelButton);
+    await tester.pumpAndSettle();
+
+    expect(find.text('契約を解約しますか？'), findsOneWidget);
+    expect(find.textContaining('2030年4月1日で自動更新を停止'), findsOneWidget);
+
+    await tester.tap(find.text('解約する'));
+    await tester.pumpAndSettle();
+
+    expect(cancellationCalls, 1);
+    expect(find.textContaining('2030年4月1日で自動更新を停止します'), findsOneWidget);
+  });
+
+  testWidgets('trial cancellation warns that access ends immediately', (
+    tester,
+  ) async {
+    final state = SubscriptionState(
+      effectivePlan: SubscriptionPlanTier.premium,
+      scheduledPlan: null,
+      scheduledPlanEffectiveAt: null,
+      currentPeriodEnd: DateTime.utc(2030, 4, 10),
+      paymentGraceUntil: null,
+      trialEndsAt: DateTime.utc(2030, 4, 10),
+      trialUsed: true,
+      cancelAtPeriodEnd: false,
+      billingStatus: 'trialing',
+    );
+    var cancellationCalls = 0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SubscriptionStatusScreen(
+          loadState: () async => state,
+          cancelSubscription: () async {
+            cancellationCalls += 1;
+            return const SubscriptionCancellationResult(
+              mode: SubscriptionCancellationMode.immediate,
+              effectiveAt: null,
+            );
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final cancelButton = find.widgetWithText(
+      OutlinedButton,
+      '無料体験を解約',
+    );
+    await tester.ensureVisible(cancelButton);
+    await tester.pumpAndSettle();
+    await tester.tap(cancelButton);
+    await tester.pumpAndSettle();
+
+    expect(find.text('無料体験を解約しますか？'), findsOneWidget);
+    expect(find.textContaining('直ちに終了'), findsOneWidget);
+
+    await tester.tap(find.text('解約する'));
+    await tester.pumpAndSettle();
+
+    expect(cancellationCalls, 1);
+    expect(find.textContaining('Freeプランへ移行します'), findsOneWidget);
+  });
+
 }
