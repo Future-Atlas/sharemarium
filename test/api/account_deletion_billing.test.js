@@ -45,8 +45,8 @@ test('Stripe lookup failures block destructive account deletion', () => {
   assert.match(source, /rollbackDeletionPreparation/)
 })
 
-test('Stripe cancellation uses an idempotency key without requesting proration', () => {
-  assert.match(source, /'Idempotency-Key': idempotencyKey/)
+test('Stripe subscription DELETE relies on HTTP idempotency without proration flags', () => {
+  assert.doesNotMatch(source, /Idempotency-Key/)
   assert.doesNotMatch(source, /invoice_now=true/)
   assert.doesNotMatch(source, /prorate=true/)
 })
