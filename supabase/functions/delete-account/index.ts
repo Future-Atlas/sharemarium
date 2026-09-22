@@ -71,6 +71,9 @@ Deno.serve(async (request) => {
       ? billingContext.provider_subscription_id.trim()
       : ''
 
+  // Resolve the provider subscription before deletion preparation. The profile
+  // and its private billing entitlement can disappear as part of account
+  // deletion, so the provider identity must be known before Auth deletion.
   const { error: prepareError } = await admin.rpc(
     'prepare_self_account_deletion',
     { target_profile: profileId },
