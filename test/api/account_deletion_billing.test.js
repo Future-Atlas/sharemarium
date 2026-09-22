@@ -18,15 +18,18 @@ test('account deletion verifies billing state only after authenticating the user
 })
 
 test('active Stripe subscription is canceled before deleting the auth user', () => {
-  const lookup = source.indexOf("method: 'GET'")
-  const cancel = source.indexOf("method: 'DELETE'")
+  const cancelCall = source.indexOf('await cancelStripeSubscription({')
   const deleteUser = source.indexOf('admin.auth.admin.deleteUser(profileId)')
+  const helper = source.slice(source.indexOf('async function cancelStripeSubscription'))
+  const lookup = helper.indexOf("method: 'GET'")
+  const cancel = helper.indexOf("method: 'DELETE'")
 
+  assert.ok(cancelCall >= 0)
+  assert.ok(deleteUser > cancelCall)
   assert.ok(lookup >= 0)
   assert.ok(cancel > lookup)
-  assert.ok(deleteUser > cancel)
-  assert.match(source, /lookupPayload\?\.status === 'canceled'/)
-  assert.match(source, /cancelPayload\?\.status !== 'canceled'/)
+  assert.match(helper, /lookupPayload\?\.status === 'canceled'/)
+  assert.match(helper, /cancelPayload\?\.status !== 'canceled'/)
 })
 
 test('Stripe lookup failures block destructive account deletion', () => {
