@@ -120,7 +120,6 @@ Deno.serve(async (request) => {
       await cancelStripeSubscription({
         subscriptionId: providerSubscriptionId,
         secretKey: stripeSecretKey,
-        idempotencyKey: `sharemarium-delete-account-${profileId}-${providerSubscriptionId}`,
       })
     } catch (error) {
       await rollbackDeletionPreparation(
@@ -164,11 +163,9 @@ Deno.serve(async (request) => {
 async function cancelStripeSubscription({
   subscriptionId,
   secretKey,
-  idempotencyKey,
 }: {
   subscriptionId: string
   secretKey: string
-  idempotencyKey: string
 }) {
   const subscriptionPath =
     `https://api.stripe.com/v1/subscriptions/${encodeURIComponent(subscriptionId)}`
@@ -191,10 +188,7 @@ async function cancelStripeSubscription({
 
   const cancelResponse = await fetch(subscriptionPath, {
     method: 'DELETE',
-    headers: {
-      ...authorization,
-      'Idempotency-Key': idempotencyKey,
-    },
+    headers: authorization,
   })
   const cancelPayload = await cancelResponse.json().catch(() => ({}))
   if (!cancelResponse.ok || cancelPayload?.status !== 'canceled') {
