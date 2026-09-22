@@ -54,4 +54,4 @@ jobs:
         # manual node_modules mode. The Edge Functions use npm: imports that
         # are not installed by npm ci; auto mode lets Deno resolve them for
         # this isolated type-check without changing runtime configuration.
-        run: deno check --node-modules-dir=auto supabase/functions/delete-account/index.ts supabase/functions/billing-checkout/index.ts supabase/functions/billing-webhook/index.ts
+        run: deno check --node-modules-dir=auto supabase/functions/delete-account/index.ts supabase/functions/billing-checkout/index.ts supabase/functions/billing-cancel-subscription/index.ts supabase/functions/billing-webhook/index.ts
