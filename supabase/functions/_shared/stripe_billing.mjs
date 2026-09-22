@@ -61,6 +61,24 @@ export function stripeSubscriptionId(object) {
   return stripeObjectId(object?.subscription)
 }
 
+export function stripePaymentIntentId(object) {
+  return stripeObjectId(object?.payment_intent)
+}
+
+export function stripeRefundChargeId(object) {
+  return stripeObjectId(object?.charge)
+}
+
+export function normalizeStripeChargeEventType(eventType) {
+  switch (eventType) {
+    case 'charge.pending': return 'charge.pending'
+    case 'charge.succeeded': return 'charge.paid'
+    case 'charge.failed': return 'charge.failed'
+    case 'charge.expired': return 'charge.void'
+    default: return null
+  }
+}
+
 export function subscriptionPriceId(subscription) {
   const item = subscription?.items?.data?.[0]
   return stripeObjectId(item?.price)

@@ -14,9 +14,23 @@ test('Stripe webhook bypasses Supabase JWT only because it verifies Stripe HMAC 
   const signatureCheck = webhook.indexOf('verifyStripeSignature(rawBody, signature, webhookSecret)')
   const jsonParse = webhook.indexOf('JSON.parse(rawBody)')
   const dbClient = webhook.indexOf('createClient(supabaseUrl, serviceRoleKey')
+  const normalizeEvent = webhook.indexOf(
+    'normalizeEvent(admin, event.type, object, stripeSecretKey)',
+  )
   assert.ok(signatureCheck >= 0)
   assert.ok(jsonParse > signatureCheck)
   assert.ok(dbClient > signatureCheck)
+  assert.ok(normalizeEvent > signatureCheck)
+})
+
+test('Stripe webhook routes charge and refund events into normalized audit RPCs', () => {
+  const webhook = read('supabase/functions/billing-webhook/index.ts')
+
+  assert.match(webhook, /apply_normalized_charge_event/)
+  assert.match(webhook, /apply_normalized_refund_event/)
+  assert.match(webhook, /\/v1\/invoice_payments/)
+  assert.match(webhook, /payment\[payment_intent\]/)
+  assert.match(webhook, /charge_for_unlinked_customer_ignored/)
 })
 
 test('Stripe Checkout authenticates the Supabase user before creating a Checkout Session', () => {
