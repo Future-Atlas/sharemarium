@@ -154,7 +154,7 @@ async function normalizeEvent(
   type: string,
   object: any,
   stripeSecretKey?: string,
-) {
+): Promise<any> {
   if (type.startsWith('customer.subscription.')) {
     const customerId = stripeCustomerId(object)
     const subscriptionId = object?.id?.toString()
