@@ -54,9 +54,26 @@ Deno.serve(async (request) => {
     )
   }
 
+  const profileId = userData.user.id
+  const { data: billingRows, error: billingError } = await admin.rpc(
+    'billing_provider_context',
+    { target_profile: profileId, target_provider: 'stripe' },
+  )
+  if (billingError) {
+    return Response.json(
+      { error: 'Unable to verify billing state' },
+      { status: 500, headers: corsHeaders },
+    )
+  }
+  const billingContext = Array.isArray(billingRows) ? billingRows[0] : billingRows
+  const providerSubscriptionId =
+    typeof billingContext?.provider_subscription_id === 'string'
+      ? billingContext.provider_subscription_id.trim()
+      : ''
+
   const { error: prepareError } = await admin.rpc(
     'prepare_self_account_deletion',
-    { target_profile: userData.user.id },
+    { target_profile: profileId },
   )
   if (prepareError) {
     return Response.json(
@@ -68,7 +85,7 @@ Deno.serve(async (request) => {
   const { data: auditId, error: auditError } = await admin.rpc(
     'prepare_deleted_account_record',
     {
-      target_profile: userData.user.id,
+      target_profile: profileId,
       deletion_kind: 'self',
       deleting_admin: null,
       deletion_notes: 'User-requested account withdrawal',
@@ -76,7 +93,7 @@ Deno.serve(async (request) => {
   )
   if (auditError || !auditId) {
     await admin.rpc('cancel_self_account_deletion', {
-      target_profile: userData.user.id,
+      target_profile: profileId,
     })
     return Response.json(
       { error: auditError?.message ?? 'Unable to record account deletion' },
@@ -84,12 +101,44 @@ Deno.serve(async (request) => {
     )
   }
 
-  const { error: deleteError } = await admin.auth.admin.deleteUser(
-    userData.user.id,
-  )
+  if (providerSubscriptionId) {
+    const stripeSecretKey = Deno.env.get('STRIPE_SECRET_KEY')
+    if (!stripeSecretKey) {
+      await rollbackDeletionPreparation(
+        admin,
+        profileId,
+        auditId,
+        'Billing cancellation is not configured',
+      )
+      return Response.json(
+        { error: 'Unable to cancel the active subscription before account deletion' },
+        { status: 503, headers: corsHeaders },
+      )
+    }
+
+    try {
+      await cancelStripeSubscription({
+        subscriptionId: providerSubscriptionId,
+        secretKey: stripeSecretKey,
+      })
+    } catch (error) {
+      await rollbackDeletionPreparation(
+        admin,
+        profileId,
+        auditId,
+        safeError(error),
+      )
+      return Response.json(
+        { error: 'Unable to cancel the active subscription before account deletion' },
+        { status: 502, headers: corsHeaders },
+      )
+    }
+  }
+
+  const { error: deleteError } = await admin.auth.admin.deleteUser(profileId)
   if (deleteError) {
     await admin.rpc('cancel_self_account_deletion', {
-      target_profile: userData.user.id,
+      target_profile: profileId,
     })
     await admin.rpc('finalize_deleted_account_record', {
       audit_record: auditId,
@@ -110,3 +159,59 @@ Deno.serve(async (request) => {
 
   return Response.json({ deleted: true }, { headers: corsHeaders })
 })
+
+
+async function cancelStripeSubscription({
+  subscriptionId,
+  secretKey,
+}: {
+  subscriptionId: string
+  secretKey: string
+}) {
+  const subscriptionPath =
+    `https://api.stripe.com/v1/subscriptions/${encodeURIComponent(subscriptionId)}`
+  const authorization = { Authorization: `Bearer ${secretKey}` }
+
+  const lookupResponse = await fetch(subscriptionPath, {
+    method: 'GET',
+    headers: authorization,
+  })
+  const lookupPayload = await lookupResponse.json().catch(() => ({}))
+  if (!lookupResponse.ok) {
+    throw new Error(
+      `Stripe subscription lookup failed with HTTP ${lookupResponse.status}`,
+    )
+  }
+  if (lookupPayload?.status === 'canceled') return
+
+  const cancelResponse = await fetch(subscriptionPath, {
+    method: 'DELETE',
+    headers: authorization,
+  })
+  const cancelPayload = await cancelResponse.json().catch(() => ({}))
+  if (!cancelResponse.ok || cancelPayload?.status !== 'canceled') {
+    throw new Error(
+      `Stripe subscription cancellation failed with HTTP ${cancelResponse.status}`,
+    )
+  }
+}
+
+async function rollbackDeletionPreparation(
+  admin: any,
+  profileId: string,
+  auditId: string,
+  failureMessage: string,
+) {
+  await admin.rpc('cancel_self_account_deletion', {
+    target_profile: profileId,
+  })
+  await admin.rpc('finalize_deleted_account_record', {
+    audit_record: auditId,
+    succeeded: false,
+    failure_message: failureMessage.slice(0, 1000),
+  })
+}
+
+function safeError(error: unknown) {
+  return error instanceof Error ? error.message.slice(0, 500) : 'Unknown billing cancellation error'
+}
