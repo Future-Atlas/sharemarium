@@ -16,17 +16,22 @@ typedef SubscriptionCheckoutStarter =
 typedef SubscriptionCancellationStarter =
     Future<SubscriptionCancellationResult> Function();
 
+typedef SubscriptionPlanChangeStarter =
+    Future<SubscriptionPlanChangeResult> Function(SubscriptionPlanTier targetPlan);
+
 class SubscriptionStatusScreen extends StatefulWidget {
   const SubscriptionStatusScreen({
     super.key,
     this.loadState,
     this.startCheckout,
     this.cancelSubscription,
+    this.changePlan,
   });
 
   final SubscriptionStateLoader? loadState;
   final SubscriptionCheckoutStarter? startCheckout;
   final SubscriptionCancellationStarter? cancelSubscription;
+  final SubscriptionPlanChangeStarter? changePlan;
 
   @override
   State<SubscriptionStatusScreen> createState() =>
@@ -40,6 +45,7 @@ class _SubscriptionStatusScreenState extends State<SubscriptionStatusScreen> {
   SubscriptionBillingPeriod _billingPeriod =
       SubscriptionBillingPeriod.monthly;
   SubscriptionPlanTier? _startingPlan;
+  SubscriptionPlanTier? _changingPlan;
   bool _canceling = false;
 
   @override
@@ -101,6 +107,72 @@ class _SubscriptionStatusScreenState extends State<SubscriptionStatusScreen> {
       );
     } finally {
       if (mounted) setState(() => _startingPlan = null);
+    }
+  }
+
+  Future<void> _schedulePlanChange(
+    SubscriptionState state,
+    SubscriptionPlanTier targetPlan,
+  ) async {
+    if (_changingPlan != null || targetPlan == state.effectivePlan) return;
+
+    final effectiveAt = state.currentPeriodEnd;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('${targetPlan.label}へ変更しますか？'),
+        content: Text(
+          effectiveAt == null
+              ? '現在の請求期間が終了した時点でプランを変更します。日割り請求・日割り返金は行いません。'
+              : state.isTrialing
+                  ? '${_formatDate(effectiveAt)}の無料体験終了時に${targetPlan.label}へ変更します。'
+                  : '${_formatDate(effectiveAt)}の次回更新日から${targetPlan.label}へ変更します。日割り請求・日割り返金は行いません。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('戻る'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('変更を予約'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _changingPlan = targetPlan);
+    try {
+      final changer = widget.changePlan ??
+          (plan) => SubscriptionManagementService.schedulePlanChange(
+                targetPlan: plan,
+              );
+      final result = await changer(targetPlan);
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${_formatDate(result.effectiveAt)}から${result.scheduledPlan.label}へ変更します。',
+          ),
+        ),
+      );
+      await _load();
+    } on SubscriptionPlanChangeException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('プラン変更を予約できませんでした。契約状態を確認して再度お試しください。'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _changingPlan = null);
     }
   }
 
@@ -263,7 +335,19 @@ class _SubscriptionStatusScreenState extends State<SubscriptionStatusScreen> {
               currentPlan: state.effectivePlan,
               billingPeriod: _billingPeriod,
               startingPlan: _startingPlan,
+              changingPlan: _changingPlan,
+              canChangePlan:
+                  state.isPaid &&
+                  !state.cancelAtPeriodEnd &&
+                  !state.hasScheduledPlan &&
+                  !state.isPastDue &&
+                  plan.tier != SubscriptionPlanTier.free &&
+                  plan.tier != state.effectivePlan,
+              planChangeLabel: state.isTrialing
+                  ? '無料体験終了後に変更'
+                  : '次回更新日から変更',
               onStartCheckout: _startCheckout,
+              onChangePlan: (target) => _schedulePlanChange(state, target),
             ),
           ),
         ),
@@ -292,8 +376,10 @@ class _SubscriptionStatusScreenState extends State<SubscriptionStatusScreen> {
                 const SizedBox(height: 10),
                 Text(
                   state.effectivePlan == SubscriptionPlanTier.free
-                      ? 'Plus／Premiumの新規契約はこの画面から開始できます。プラン変更・解約のオンライン操作は、決済機能の公開後に追加します。'
-                      : '現在は契約状態の確認を利用できます。プラン変更・解約のオンライン操作は、決済機能の公開後に追加します。',
+                      ? 'Plus／Premiumの新規契約はこの画面から開始できます。'
+                      : state.hasScheduledPlan
+                          ? 'プラン変更は予約済みです。現在の契約情報に変更予定日を表示しています。'
+                          : 'Plus／Premium間の変更予約と契約の解約をこの画面から行えます。',
                   style: const TextStyle(height: 1.5),
                 ),
                 const SizedBox(height: 8),
@@ -618,14 +704,22 @@ class _PlanCard extends StatelessWidget {
     required this.currentPlan,
     required this.billingPeriod,
     required this.startingPlan,
+    required this.changingPlan,
+    required this.canChangePlan,
+    required this.planChangeLabel,
     required this.onStartCheckout,
+    required this.onChangePlan,
   });
 
   final _PlanDefinition definition;
   final SubscriptionPlanTier currentPlan;
   final SubscriptionBillingPeriod billingPeriod;
   final SubscriptionPlanTier? startingPlan;
+  final SubscriptionPlanTier? changingPlan;
+  final bool canChangePlan;
+  final String planChangeLabel;
   final ValueChanged<SubscriptionPlanTier> onStartCheckout;
+  final ValueChanged<SubscriptionPlanTier> onChangePlan;
 
   @override
   Widget build(BuildContext context) {
@@ -701,6 +795,25 @@ class _PlanCard extends StatelessWidget {
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : Text('${billingPeriod.label}で申し込む'),
+                ),
+              ),
+            ],
+            if (canChangePlan) ...[
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: changingPlan == null
+                      ? () => onChangePlan(definition.tier)
+                      : null,
+                  icon: changingPlan == definition.tier
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.event_repeat_outlined),
+                  label: Text(planChangeLabel),
                 ),
               ),
             ],
