@@ -1,4 +1,5 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
+import { subscriptionPeriodEnd, toIsoFromUnix } from '../_shared/stripe_billing.mjs'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -73,7 +74,7 @@ Deno.serve(async (request) => {
     if (subscription?.cancel_at_period_end === true) {
       return json({
         mode: 'already_scheduled',
-        effectiveAt: toIsoFromUnix(subscription?.current_period_end),
+        effectiveAt: toIsoFromUnix(subscriptionPeriodEnd(subscription)),
       })
     }
 
@@ -103,7 +104,7 @@ Deno.serve(async (request) => {
 
     return json({
       mode: 'period_end',
-      effectiveAt: toIsoFromUnix(updated?.current_period_end),
+      effectiveAt: toIsoFromUnix(subscriptionPeriodEnd(updated)),
     })
   } catch (error) {
     console.error('Stripe subscription cancellation failed', safeError(error))
@@ -132,13 +133,6 @@ async function stripeRequest(
     throw new Error(`Stripe request failed with HTTP ${response.status}`)
   }
   return payload
-}
-
-function toIsoFromUnix(value: unknown) {
-  const unix = Number(value)
-  return Number.isFinite(unix) && unix > 0
-    ? new Date(Math.trunc(unix) * 1000).toISOString()
-    : null
 }
 
 function safeError(error: unknown) {
