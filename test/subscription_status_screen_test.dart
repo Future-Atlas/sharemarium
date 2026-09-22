@@ -340,7 +340,8 @@ void main() {
       '次回更新日から変更',
     );
     expect(changeButton, findsOneWidget);
-    await tester.ensureVisible(changeButton);
+    await tester.scrollUntilVisible(changeButton, 500);
+    await tester.pumpAndSettle();
     await tester.tap(changeButton);
     await tester.pumpAndSettle();
 
@@ -433,7 +434,8 @@ void main() {
       '無料体験終了後に変更',
     );
     expect(changeButton, findsOneWidget);
-    await tester.ensureVisible(changeButton);
+    await tester.scrollUntilVisible(changeButton, 500);
+    await tester.pumpAndSettle();
     await tester.tap(changeButton);
     await tester.pumpAndSettle();
 
