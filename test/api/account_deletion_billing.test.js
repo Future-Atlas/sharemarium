@@ -25,7 +25,7 @@ test('active Stripe subscription is canceled before deleting the auth user', () 
   assert.ok(lookup >= 0)
   assert.ok(cancel > lookup)
   assert.ok(deleteUser > cancel)
-  assert.match(source, /payload\?\.status === 'canceled'/)
+  assert.match(source, /lookupPayload\?\.status === 'canceled'/)
   assert.match(source, /cancelPayload\?\.status !== 'canceled'/)
 })
 
