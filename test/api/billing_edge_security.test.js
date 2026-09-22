@@ -8,7 +8,7 @@ test('Stripe webhook bypasses Supabase JWT only because it verifies Stripe HMAC 
   const config = read('supabase/config.toml')
   const webhook = read('supabase/functions/billing-webhook/index.ts')
 
-  assert.match(config, /\[functions\.billing-checkout\]\s+verify_jwt = true/)
+  assert.match(config, /\[functions\.billing-checkout\]\s+verify_jwt = true/)\n  assert.match(config, /\[functions\.billing-cancel-subscription\]\s+verify_jwt = true/)
   assert.match(config, /\[functions\.billing-webhook\]\s+verify_jwt = false/)
 
   const signatureCheck = webhook.indexOf('verifyStripeSignature(rawBody, signature, webhookSecret)')
@@ -52,7 +52,7 @@ test('Stripe Checkout authenticates the Supabase user before creating a Checkout
 test('staging and production deploy only explicitly approved billing functions', () => {
   const stagingScript = read('scripts/deploy-staging-db.mjs')
   const productionWorkflow = read('.github/workflows/supabase-deploy.yaml')
-  for (const name of ['billing-checkout', 'billing-webhook']) {
+  for (const name of ['billing-checkout', 'billing-cancel-subscription', 'billing-webhook']) {
     assert.ok(stagingScript.includes(`'${name}'`))
     assert.ok(productionWorkflow.includes(name))
   }
