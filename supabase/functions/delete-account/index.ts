@@ -170,24 +170,37 @@ async function cancelStripeSubscription({
   secretKey: string
   idempotencyKey: string
 }) {
-  const response = await fetch(
-    `https://api.stripe.com/v1/subscriptions/${encodeURIComponent(subscriptionId)}`,
-    {
-      method: 'DELETE',
-      headers: {
-        Authorization: `Bearer ${secretKey}`,
-        'Idempotency-Key': idempotencyKey,
-      },
+  const subscriptionPath =
+    `https://api.stripe.com/v1/subscriptions/${encodeURIComponent(subscriptionId)}`
+  const authorization = { Authorization: `Bearer ${secretKey}` }
+
+  // Confirm that the stored subscription exists in the Stripe account selected
+  // by this secret. A 404 is not treated as safe because it can also indicate
+  // a test/live or account mismatch while the real subscription still bills.
+  const lookupResponse = await fetch(subscriptionPath, {
+    method: 'GET',
+    headers: authorization,
+  })
+  const lookupPayload = await lookupResponse.json().catch(() => ({}))
+  if (!lookupResponse.ok) {
+    throw new Error(
+      `Stripe subscription lookup failed with HTTP ${lookupResponse.status}`,
+    )
+  }
+  if (lookupPayload?.status === 'canceled') return
+
+  const cancelResponse = await fetch(subscriptionPath, {
+    method: 'DELETE',
+    headers: {
+      ...authorization,
+      'Idempotency-Key': idempotencyKey,
     },
-  )
-
-  // If Stripe no longer has the subscription, there is nothing left that can
-  // renew. Treat that state as safe for account deletion.
-  if (response.status === 404) return
-
-  const payload = await response.json().catch(() => ({}))
-  if (!response.ok || payload?.status !== 'canceled') {
-    throw new Error(`Stripe subscription cancellation failed with HTTP ${response.status}`)
+  })
+  const cancelPayload = await cancelResponse.json().catch(() => ({}))
+  if (!cancelResponse.ok || cancelPayload?.status !== 'canceled') {
+    throw new Error(
+      `Stripe subscription cancellation failed with HTTP ${cancelResponse.status}`,
+    )
   }
 }
 
