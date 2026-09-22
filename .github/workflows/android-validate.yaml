@@ -1,0 +1,37 @@
+name: Validate Android Build
+
+on:
+  pull_request:
+    paths:
+      - "android/**"
+      - ".github/workflows/android-validate.yaml"
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - "android/**"
+      - ".github/workflows/android-validate.yaml"
+
+concurrency:
+  group: android-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.44.9"
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build Android debug APK
+        run: flutter build apk --debug
