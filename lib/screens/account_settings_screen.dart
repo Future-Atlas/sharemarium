@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
+import '../config/feature_flags.dart';
 import '../models/user_profile.dart';
 import '../models/profile_page_color.dart';
 import '../services/supabase_service.dart';
@@ -164,19 +165,21 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 18),
-            const _SectionTitle('プラン・契約'),
-            _SettingsCard(
-              children: [
-                ListTile(
-                  leading: const Icon(Icons.workspace_premium_outlined),
-                  title: const Text('プラン・契約'),
-                  subtitle: const Text('現在のプラン・無料体験・次回更新日を確認'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => _push(const SubscriptionStatusScreen()),
-                ),
-              ],
-            ),
+            if (FeatureFlags.subscriptionUiEnabled) ...[
+              const SizedBox(height: 18),
+              const _SectionTitle('プラン・契約'),
+              _SettingsCard(
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.workspace_premium_outlined),
+                    title: const Text('プラン・契約'),
+                    subtitle: const Text('現在のプラン・無料体験・次回更新日を確認'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => _push(const SubscriptionStatusScreen()),
+                  ),
+                ],
+              ),
+            ],
             const SizedBox(height: 18),
             const _SectionTitle('各種ポリシー'),
             _SettingsCard(
