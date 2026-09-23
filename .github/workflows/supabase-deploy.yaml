@@ -78,6 +78,7 @@ jobs:
             admin-delete-account
             billing-checkout
             billing-cancel-subscription
+            billing-change-plan
             billing-webhook
           )
 
