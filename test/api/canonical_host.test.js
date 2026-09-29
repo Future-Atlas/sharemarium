@@ -39,6 +39,25 @@ test("all crawler-facing production SEO surfaces use the www canonical origin", 
   );
 });
 
+test("legacy Vercel production host permanently redirects to the canonical www host", () => {
+  const config = JSON.parse(read("vercel.json"));
+  const redirect = config.routes?.[0];
+
+  assert.equal(redirect?.src, "/(.*)");
+  assert.deepEqual(redirect?.has, [
+    {
+      type: "header",
+      key: "host",
+      value: "book-case-u9uq.vercel.app",
+    },
+  ]);
+  assert.equal(redirect?.status, 308);
+  assert.equal(
+    redirect?.headers?.Location,
+    "https://www.sharemarium.com/$1",
+  );
+});
+
 test("production smoke checks the final indexed www host", () => {
   assert.match(
     read("scripts/production-smoke.mjs"),
