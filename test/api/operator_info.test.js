@@ -30,6 +30,10 @@ for (const environment of ['production', 'preview']) {
       assert.match(response.body, /劉 鴻斌/);
       assert.match(response.body, /企画・開発・運営/);
       assert.match(response.body, /共同開発/);
+      assert.match(response.body, /サービスの目的/);
+      assert.match(response.body, /掲載コンテンツについて/);
+      assert.match(response.body, /運営方針/);
+      assert.match(response.body, /利用者自身の読書体験/);
       assert.match(response.body, /href="https:\/\/www.instagram.com\/ryunosukeino\/" target="_blank" rel="noopener noreferrer">Instagram/);
       assert.match(response.body, /href="\/contact"/);
       assert.match(response.body, /"@type":"AboutPage"/);
