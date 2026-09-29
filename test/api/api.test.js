@@ -456,7 +456,7 @@ test("genre SEO pages are noindex when no books are available", async () => {
   await seo({ query: { path: "/genre/recommended" } }, res);
 
   assert.equal(res.statusCode, 200);
-  assert.match(res.body, /noindex,nofollow/);
+  assert.match(res.body, /noindex,follow/);
   assert.doesNotMatch(res.body, /pagead2\.googlesyndication\.com/);
   delete process.env.VERCEL_ENV;
 });
