@@ -383,7 +383,7 @@ test("sitemap omits the posts index when the posts index is noindex", async () =
   await sitemap({}, res);
 
   assert.equal(res.statusCode, 200);
-  assert.doesNotMatch(res.body, /<loc>https:\/\/sharemarium\.com\/posts<\/loc>/);
+  assert.doesNotMatch(res.body, /<loc>https:\/\/www\.sharemarium\.com\/posts<\/loc>/);
 
   global.fetch = previousFetch;
   restoreEnv(previousEnv);
@@ -430,7 +430,7 @@ test("sitemap omits the posts index until enough substantive reviews exist", asy
   await sitemap({}, res);
 
   assert.equal(res.statusCode, 200);
-  assert.doesNotMatch(res.body, /<loc>https:\/\/sharemarium\.com\/posts<\/loc>/);
+  assert.doesNotMatch(res.body, /<loc>https:\/\/www\.sharemarium\.com\/posts<\/loc>/);
   assert.doesNotMatch(res.body, new RegExp(`/posts/${POST_B}`));
   assert.ok(postsRequest);
   assert.equal(new URL(postsRequest).searchParams.get("is_spoiler"), null);
@@ -480,7 +480,7 @@ test("sitemap includes the posts index after three indexable reviews exist", asy
   await sitemap({}, res);
 
   assert.equal(res.statusCode, 200);
-  assert.match(res.body, /<loc>https:\/\/sharemarium\.com\/posts<\/loc>/);
+  assert.match(res.body, /<loc>https:\/\/www\.sharemarium\.com\/posts<\/loc>/);
   assert.match(res.body, new RegExp(`/posts/${POST_A}`));
   assert.match(res.body, new RegExp(`/posts/${POST_B}`));
 
