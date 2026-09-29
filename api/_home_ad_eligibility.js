@@ -1,18 +1,47 @@
-const MIN_SUBSTANTIVE_REVIEW_CHARS = 80;
+const MIN_SUBSTANTIVE_REVIEW_CHARS = 120;
+const MIN_SUBSTANTIVE_PUBLIC_REVIEWS = 5;
+const MIN_DISTINCT_PUBLIC_REVIEW_AUTHORS = 3;
 
 function normalizedTextLength(value) {
   const normalized = String(value || "").replace(/\s+/g, " ").trim();
   return Array.from(normalized).length;
 }
 
-function hasSubstantivePublicReview(rows) {
-  if (!Array.isArray(rows)) return false;
-  return rows.some(
-    (row) =>
-      row &&
-      row.is_spoiler !== true &&
-      normalizedTextLength(row.comment) >= MIN_SUBSTANTIVE_REVIEW_CHARS,
+function isSubstantivePublicReview(row) {
+  return (
+    row &&
+    row.is_spoiler !== true &&
+    normalizedTextLength(row.comment) >= MIN_SUBSTANTIVE_REVIEW_CHARS
   );
+}
+
+function evaluatePublisherContent(rows) {
+  if (!Array.isArray(rows)) {
+    return {
+      eligible: false,
+      substantiveReviewCount: 0,
+      distinctAuthorCount: 0,
+    };
+  }
+
+  const substantiveRows = rows.filter(isSubstantivePublicReview);
+  const authorIds = new Set(
+    substantiveRows
+      .map((row) => String(row?.profile_id || "").trim())
+      .filter(Boolean),
+  );
+
+  return {
+    eligible:
+      substantiveRows.length >= MIN_SUBSTANTIVE_PUBLIC_REVIEWS &&
+      authorIds.size >= MIN_DISTINCT_PUBLIC_REVIEW_AUTHORS,
+    substantiveReviewCount: substantiveRows.length,
+    distinctAuthorCount: authorIds.size,
+  };
+}
+
+function hasSubstantivePublicReview(rows) {
+  return evaluatePublisherContent(rows).eligible;
 }
 
 async function fetchHomeAdEligibility({ env = process.env, request = fetch } = {}) {
@@ -24,10 +53,10 @@ async function fetchHomeAdEligibility({ env = process.env, request = fetch } = {
 
   try {
     const url = new URL("/rest/v1/posts", supabaseUrl);
-    url.searchParams.set("select", "id,comment,is_spoiler");
+    url.searchParams.set("select", "id,profile_id,comment,is_spoiler");
     url.searchParams.set("is_spoiler", "is.false");
     url.searchParams.set("order", "created_at.desc");
-    url.searchParams.set("limit", "50");
+    url.searchParams.set("limit", "100");
 
     const response = await request(url, {
       headers: {
@@ -44,9 +73,10 @@ async function fetchHomeAdEligibility({ env = process.env, request = fetch } = {
     }
 
     const rows = await response.json();
+    const evaluation = evaluatePublisherContent(rows);
     return {
-      eligible: hasSubstantivePublicReview(rows),
-      diagnostic: "ok",
+      eligible: evaluation.eligible,
+      diagnostic: `ok;reviews=${evaluation.substantiveReviewCount};authors=${evaluation.distinctAuthorCount}`,
     };
   } catch {
     return { eligible: false, diagnostic: "request_failed" };
@@ -55,7 +85,11 @@ async function fetchHomeAdEligibility({ env = process.env, request = fetch } = {
 
 module.exports = {
   MIN_SUBSTANTIVE_REVIEW_CHARS,
+  MIN_SUBSTANTIVE_PUBLIC_REVIEWS,
+  MIN_DISTINCT_PUBLIC_REVIEW_AUTHORS,
   normalizedTextLength,
+  isSubstantivePublicReview,
+  evaluatePublisherContent,
   hasSubstantivePublicReview,
   fetchHomeAdEligibility,
 };

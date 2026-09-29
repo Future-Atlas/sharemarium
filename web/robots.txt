@@ -3,4 +3,4 @@ Allow: /
 Disallow: /api/
 Disallow: /mypage/
 
-Sitemap: https://sharemarium.com/sitemap.xml
+Sitemap: https://www.sharemarium.com/sitemap.xml

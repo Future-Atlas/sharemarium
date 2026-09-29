@@ -1,9 +1,14 @@
-const SITE_URL = "https://sharemarium.com";
+const {
+  isIndexableReview,
+  isIndexableProfileSummary,
+  isPostsIndexIndexable,
+} = require("./_seo_content_quality");
+
+const SITE_URL = "https://www.sharemarium.com";
 const FIXED_LASTMOD = normalizedLastmod(process.env.SEO_LASTMOD);
 const IS_PRODUCTION = process.env.VERCEL_ENV === "production";
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
-const MIN_INDEXABLE_REVIEW_CHARS = 80;
 
 function normalizedLastmod(value) {
   const raw = String(value || "").trim();
@@ -68,32 +73,13 @@ function canonicalProfilePath(profile) {
   return `/users/${encodeURIComponent(rawId)}`;
 }
 
-function hasPublicProfileContent(profile) {
-  const bio = String(profile?.bio || "").trim();
-  return bio.length > 0 || Number(profile?.read_count || 0) > 0;
-}
-
 function isIndexableProfile(profile) {
   return (
     profile &&
     profile.is_private !== true &&
     profile.is_suspended !== true &&
     canonicalProfilePath(profile) !== null &&
-    hasPublicProfileContent(profile)
-  );
-}
-
-function normalizedReviewLength(value) {
-  const normalized = String(value || "").replace(/\s+/g, " ").trim();
-  return Array.from(normalized).length;
-}
-
-function isIndexablePost(post) {
-  return (
-    post &&
-    String(post.id || "").trim().length > 0 &&
-    post.is_spoiler !== true &&
-    normalizedReviewLength(post.comment) >= MIN_INDEXABLE_REVIEW_CHARS
+    isIndexableProfileSummary(profile)
   );
 }
 
@@ -192,8 +178,9 @@ async function dynamicProfileUrls() {
 async function dynamicPostUrls() {
   try {
     const { posts, diagnostic } = await fetchPublicPosts();
+    const indexablePosts = posts.filter(isIndexableReview);
     return {
-      urls: posts.filter(isIndexablePost).map((post) => ({
+      urls: indexablePosts.map((post) => ({
         path: `/posts/${encodeURIComponent(String(post.id))}`,
         changefreq: "monthly",
         priority: "0.7",
@@ -201,7 +188,7 @@ async function dynamicPostUrls() {
           ? String(post.created_at).slice(0, 10)
           : undefined,
       })),
-      hasPublicPosts: posts.length > 0,
+      hasIndexablePostsIndex: isPostsIndexIndexable(posts),
       diagnostic,
     };
   } catch (err) {
@@ -211,7 +198,7 @@ async function dynamicPostUrls() {
     }
     return {
       urls: [],
-      hasPublicPosts: false,
+      hasIndexablePostsIndex: false,
       diagnostic: IS_PRODUCTION ? "posts=error" : `posts=error:${message}`,
     };
   }
@@ -235,7 +222,7 @@ module.exports = async (_req, res) => {
   ]);
   const urls = dedupeUrls([
     ...FIXED_URLS,
-    ...(posts.hasPublicPosts ? [POSTS_INDEX_URL] : []),
+    ...(posts.hasIndexablePostsIndex ? [POSTS_INDEX_URL] : []),
     ...profiles.urls,
     ...posts.urls,
   ]).map(sitemapUrl);
@@ -252,4 +239,4 @@ module.exports = async (_req, res) => {
   return res.status(200).send(xml);
 };
 
-module.exports._test = { normalizedLastmod, sitemapUrl, isIndexablePost };
+module.exports._test = { normalizedLastmod, sitemapUrl, isIndexablePost: isIndexableReview };

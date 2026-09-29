@@ -1,4 +1,9 @@
-const SITE_URL = "https://sharemarium.com";
+const {
+  indexableReviewCount,
+  isPostsIndexIndexable,
+} = require("./_seo_content_quality");
+
+const SITE_URL = "https://www.sharemarium.com";
 const SITE_NAME = "Sharemarium";
 const SUPABASE_URL = process.env.SUPABASE_URL || "";
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "";
@@ -176,7 +181,8 @@ module.exports = async (_req, res) => {
   }
 
   const canonical = `${SITE_URL}/posts`;
-  const hasPosts = posts.length > 0;
+  const indexableCount = indexableReviewCount(posts);
+  const canIndexPostsPage = isPostsIndexIndexable(posts);
   const listItems = posts.map((post, index) => {
     const profileId = String(post.profile_id || "");
     const profile = profiles.get(profileId) || null;
@@ -246,7 +252,8 @@ module.exports = async (_req, res) => {
       : `posts=ok;profiles=${profilesDiagnostic};replies=${repliesDiagnostic}`;
 
   res.setHeader("Content-Type", "text/html; charset=utf-8");
-  if (!hasPosts) res.setHeader("X-Robots-Tag", "noindex, follow");
+  if (!canIndexPostsPage) res.setHeader("X-Robots-Tag", "noindex, follow");
+  res.setHeader("X-Posts-Indexable-Reviews", String(indexableCount));
   res.setHeader("Cache-Control", "s-maxage=120, stale-while-revalidate=600");
   res.setHeader("X-Posts-Diagnostics", dependencyDiagnostic);
 
@@ -257,7 +264,7 @@ module.exports = async (_req, res) => {
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>読書レビューの投稿一覧 | ${SITE_NAME}</title>
     <meta name="description" content="Sharemariumに公開された最新の読書レビューを一覧で確認できます。気になる投稿を選ぶとレビュー詳細を読めます。">
-    <meta name="robots" content="${hasPosts ? "index,follow" : "noindex,follow"}">
+    <meta name="robots" content="${canIndexPostsPage ? "index,follow" : "noindex,follow"}">
     <link rel="canonical" href="${canonical}">
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="${SITE_NAME}">

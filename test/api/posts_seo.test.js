@@ -130,9 +130,90 @@ test("posts index renders public reviews with reply counts and detail links", as
   assert.match(res.body, /1件の返信/);
   assert.match(res.body, /読書好きA/);
   assert.match(res.body, /ネタバレを含む投稿です/);
+  assert.match(res.body, /<meta name="robots" content="noindex,follow">/);
+  assert.equal(res.headers["X-Robots-Tag"], "noindex, follow");
+  assert.equal(res.headers["X-Posts-Indexable-Reviews"], "0");
+  assert.equal(res.headers["X-Posts-Diagnostics"], "ok");
+
+  global.fetch = previousFetch;
+  restoreEnv(previousEnv);
+  delete require.cache[require.resolve("../../api/posts-seo")];
+});
+
+test("posts index becomes indexable only after three substantive public reviews", async () => {
+  const previousEnv = {
+    SUPABASE_URL: process.env.SUPABASE_URL,
+    SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY,
+  };
+  const previousFetch = global.fetch;
+  setSupabaseEnv();
+
+  const longReview = "この本を読んで感じたことを、具体的な場面や自分の経験と結び付けながら詳しく書いたレビューです。".repeat(4);
+  global.fetch = async (url) => {
+    const requested = String(url);
+    if (requested.includes("/rest/v1/posts")) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => [
+          {
+            id: POST_A,
+            profile_id: PROFILE_A,
+            book_id: "9784000000000",
+            book_title: "テスト書籍A",
+            rating: 4,
+            comment: longReview,
+            created_at: "2026-09-08T01:23:45Z",
+            is_spoiler: false,
+          },
+          {
+            id: POST_B,
+            profile_id: PROFILE_B,
+            book_id: "9784000000001",
+            book_title: "テスト書籍B",
+            rating: 5,
+            comment: longReview,
+            created_at: "2026-09-07T01:23:45Z",
+            is_spoiler: false,
+          },
+          {
+            id: "33333333-3333-4333-8333-333333333333",
+            profile_id: PROFILE_A,
+            book_id: "9784000000002",
+            book_title: "テスト書籍C",
+            rating: 3,
+            comment: longReview,
+            created_at: "2026-09-06T01:23:45Z",
+            is_spoiler: false,
+          },
+        ],
+      };
+    }
+    if (requested.includes("/rest/v1/profiles")) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => [
+          { id: PROFILE_A, username: "読書好きA", user_id: "reader_a" },
+          { id: PROFILE_B, username: "読書好きB", user_id: "reader_b" },
+        ],
+      };
+    }
+    if (requested.includes("/rest/v1/post_replies")) {
+      return { ok: true, status: 200, json: async () => [] };
+    }
+    throw new Error(`unexpected URL: ${requested}`);
+  };
+
+  delete require.cache[require.resolve("../../api/posts-seo")];
+  const handler = require("../../api/posts-seo");
+  const res = responseRecorder();
+  await handler({}, res);
+
+  assert.equal(res.statusCode, 200);
   assert.match(res.body, /<meta name="robots" content="index,follow">/);
   assert.equal(res.headers["X-Robots-Tag"], undefined);
-  assert.equal(res.headers["X-Posts-Diagnostics"], "ok");
+  assert.equal(res.headers["X-Posts-Indexable-Reviews"], "3");
 
   global.fetch = previousFetch;
   restoreEnv(previousEnv);
@@ -302,14 +383,14 @@ test("sitemap omits the posts index when the posts index is noindex", async () =
   await sitemap({}, res);
 
   assert.equal(res.statusCode, 200);
-  assert.doesNotMatch(res.body, /<loc>https:\/\/sharemarium\.com\/posts<\/loc>/);
+  assert.doesNotMatch(res.body, /<loc>https:\/\/www\.sharemarium\.com\/posts<\/loc>/);
 
   global.fetch = previousFetch;
   restoreEnv(previousEnv);
   delete require.cache[require.resolve("../../api/sitemap")];
 });
 
-test("sitemap includes the posts index whenever a public post makes it indexable", async () => {
+test("sitemap omits the posts index until enough substantive reviews exist", async () => {
   const previousEnv = {
     VERCEL_ENV: process.env.VERCEL_ENV,
     SUPABASE_URL: process.env.SUPABASE_URL,
@@ -349,10 +430,59 @@ test("sitemap includes the posts index whenever a public post makes it indexable
   await sitemap({}, res);
 
   assert.equal(res.statusCode, 200);
-  assert.match(res.body, /<loc>https:\/\/sharemarium\.com\/posts<\/loc>/);
+  assert.doesNotMatch(res.body, /<loc>https:\/\/www\.sharemarium\.com\/posts<\/loc>/);
   assert.doesNotMatch(res.body, new RegExp(`/posts/${POST_B}`));
   assert.ok(postsRequest);
   assert.equal(new URL(postsRequest).searchParams.get("is_spoiler"), null);
+
+  global.fetch = previousFetch;
+  restoreEnv(previousEnv);
+  delete require.cache[require.resolve("../../api/sitemap")];
+});
+
+
+test("sitemap includes the posts index after three indexable reviews exist", async () => {
+  const previousEnv = {
+    VERCEL_ENV: process.env.VERCEL_ENV,
+    SUPABASE_URL: process.env.SUPABASE_URL,
+    SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY,
+  };
+  const previousFetch = global.fetch;
+  process.env.VERCEL_ENV = "production";
+  setSupabaseEnv();
+  const longReview = "検索対象として十分な長さを持つ独自レビューです。".repeat(8);
+
+  global.fetch = async (url) => {
+    const requested = String(url);
+    if (requested.includes("/rest/v1/profiles")) {
+      return { ok: true, status: 200, json: async () => [] };
+    }
+    if (requested.includes("/rest/v1/posts")) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => [POST_A, POST_B, "33333333-3333-4333-8333-333333333333"].map(
+          (id, index) => ({
+            id,
+            comment: longReview,
+            created_at: `2026-09-0${8 - index}T01:23:45Z`,
+            is_spoiler: false,
+          }),
+        ),
+      };
+    }
+    throw new Error(`unexpected URL: ${requested}`);
+  };
+
+  delete require.cache[require.resolve("../../api/sitemap")];
+  const sitemap = require("../../api/sitemap");
+  const res = responseRecorder();
+  await sitemap({}, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.match(res.body, /<loc>https:\/\/www\.sharemarium\.com\/posts<\/loc>/);
+  assert.match(res.body, new RegExp(`/posts/${POST_A}`));
+  assert.match(res.body, new RegExp(`/posts/${POST_B}`));
 
   global.fetch = previousFetch;
   restoreEnv(previousEnv);
