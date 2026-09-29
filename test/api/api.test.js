@@ -366,7 +366,7 @@ test("genre SEO pages never enable AdSense even when books are available", async
   process.env.VERCEL_ENV = "production";
   process.env.RAKUTEN_APP_ID = "app";
   process.env.RAKUTEN_ACCESS_KEY = "key";
-  process.env.RAKUTEN_REFERER = "https://sharemarium.com";
+  process.env.RAKUTEN_REFERER = "https://www.sharemarium.com";
 
   const requestModulePath = require.resolve("../../api/_rakuten_request");
   const originalRequestModule = require.cache[requestModulePath];
