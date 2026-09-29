@@ -246,9 +246,7 @@ module.exports = async (req, res) => {
   const canonical = canonicalPostUrl(postId);
   const profileUrl = canonicalProfileUrl(profile, post.profile_id);
   const description = shortDescription(comment, bookTitle, username);
-  const isIndexable =
-    post.is_spoiler !== true &&
-    textLength(comment) >= MIN_INDEXABLE_REVIEW_CHARS;
+  const isIndexable = isIndexableReview(post);
   const robots = isIndexable ? "index,follow" : "noindex,follow";
   const title = `${bookTitle}のレビュー | ${username} | ${SITE_NAME}`;
 
