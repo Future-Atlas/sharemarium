@@ -662,6 +662,7 @@ module.exports = async (req, res) => {
     let favorites = [];
     let profileSummaryIndexable = false;
     let profileHasIndexableReview = false;
+    let user = null;
     const isbnCache = new Map();
     const requestedProfileId = (() => {
       const match = decodedPath.match(
@@ -679,7 +680,7 @@ module.exports = async (req, res) => {
         const profiles = await supabaseGet(
           `profiles?${profileFilter}&select=id,username,user_id,bio,read_count,followers_count,following_count,is_private,is_suspended`,
         );
-        const user = Array.isArray(profiles) ? profiles[0] : null;
+        user = Array.isArray(profiles) ? profiles[0] : null;
         if (user) {
           const isPublic =
             user.is_private !== true && user.is_suspended !== true;
