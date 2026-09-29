@@ -1,8 +1,9 @@
+const { isIndexableReview } = require("./_seo_content_quality");
+
 const SITE_URL = "https://sharemarium.com";
 const SITE_NAME = "Sharemarium";
 const SUPABASE_URL = process.env.SUPABASE_URL || "";
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "";
-const MIN_INDEXABLE_REVIEW_CHARS = 80;
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -17,10 +18,6 @@ function escapeHtml(value) {
 
 function normalizeText(value) {
   return String(value ?? "").replace(/\s+/g, " ").trim();
-}
-
-function textLength(value) {
-  return Array.from(normalizeText(value)).length;
 }
 
 function firstQueryValue(value) {
@@ -246,9 +243,7 @@ module.exports = async (req, res) => {
   const canonical = canonicalPostUrl(postId);
   const profileUrl = canonicalProfileUrl(profile, post.profile_id);
   const description = shortDescription(comment, bookTitle, username);
-  const isIndexable =
-    post.is_spoiler !== true &&
-    textLength(comment) >= MIN_INDEXABLE_REVIEW_CHARS;
+  const isIndexable = isIndexableReview(post);
   const robots = isIndexable ? "index,follow" : "noindex,follow";
   const title = `${bookTitle}のレビュー | ${username} | ${SITE_NAME}`;
 
