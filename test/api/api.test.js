@@ -266,6 +266,11 @@ test("SEO handler returns noindex 404 for a missing profile", async () => {
 });
 
 test("SEO handler noindexes a thin public profile", async () => {
+  const previousEnv = {
+    VERCEL_ENV: process.env.VERCEL_ENV,
+    SUPABASE_URL: process.env.SUPABASE_URL,
+    SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY,
+  };
   process.env.VERCEL_ENV = "production";
   process.env.SUPABASE_URL = "https://supabase.example";
   process.env.SUPABASE_ANON_KEY = "public-key";
@@ -310,6 +315,10 @@ test("SEO handler noindexes a thin public profile", async () => {
   assert.equal(res.headers["X-Robots-Tag"], "noindex, follow");
 
   global.fetch = originalFetch;
+  for (const [key, value] of Object.entries(previousEnv)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
   delete require.cache[require.resolve("../../api/seo")];
 });
 
