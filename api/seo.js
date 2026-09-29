@@ -380,10 +380,10 @@ function faqStructuredData() {
       },
       {
         "@type": "Question",
-        name: "Sharemariumの対象ジャンルは何ですか？",
+        name: "ネタバレを含む感想は投稿できますか？",
         acceptedAnswer: {
           "@type": "Answer",
-          text: "おすすめの本、洋書、人気作品を中心に紹介しています。",
+          text: "投稿時にネタバレを含むことを設定でき、閲覧者が意図せず内容を読まないように配慮しています。",
         },
       },
     ],
