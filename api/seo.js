@@ -3,6 +3,10 @@
 
 const { requestRakuten } = require("./_rakuten_request");
 const { evaluatePublisherContent, isSubstantivePublicReview } = require("./_home_ad_eligibility");
+const {
+  isIndexableProfileSummary,
+  isIndexableReview,
+} = require("./_seo_content_quality");
 
 const SUPABASE_URL = process.env.SUPABASE_URL || "";
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "";
@@ -635,9 +639,9 @@ module.exports = async (req, res) => {
       <main>
                 <nav style="margin: 0 0 16px 0; font-size: 0.95em;">
                     <a href="${SITE_URL}/">ホーム</a> |
-                    <a href="${SITE_URL}/genre/recommended">おすすめの本</a> |
-                    <a href="${SITE_URL}/genre/western">洋書</a> |
-                    <a href="${SITE_URL}/genre/popular">人気作品</a>
+                    <a href="${SITE_URL}/posts">公開レビュー</a> |
+                    <a href="${SITE_URL}/about">運営者情報</a> |
+                    <a href="${SITE_URL}/contact">お問い合わせ</a>
                 </nav>
         ${content}
       </main>
@@ -656,7 +660,8 @@ module.exports = async (req, res) => {
     let stats = { read: 0, followers: 0, following: 0 };
     let posts = [];
     let favorites = [];
-    let hasReliableData = false;
+    let profileSummaryIndexable = false;
+    let profileHasIndexableReview = false;
     const isbnCache = new Map();
     const requestedProfileId = (() => {
       const match = decodedPath.match(
@@ -700,7 +705,7 @@ module.exports = async (req, res) => {
             return res.status(404).send(forbiddenHtml);
           }
 
-          hasReliableData = true;
+          profileSummaryIndexable = isIndexableProfileSummary(user);
           username = user.username;
           bio = user.bio || bio;
           stats.read = user.read_count || stats.read;
@@ -708,10 +713,11 @@ module.exports = async (req, res) => {
           stats.following = user.following_count || stats.following;
 
           const fetchedPosts = await supabaseGet(
-            `posts?profile_id=eq.${user.id}&select=id,book_id,rating,comment,created_at&order=created_at.desc&limit=10`,
+            `posts?profile_id=eq.${user.id}&select=id,book_id,rating,comment,created_at,is_spoiler&order=created_at.desc&limit=10`,
           );
 
           if (Array.isArray(fetchedPosts) && fetchedPosts.length > 0) {
+            profileHasIndexableReview = fetchedPosts.some(isIndexableReview);
             posts = await Promise.all(
               fetchedPosts.map(async (p) => {
                 const rawBookId = p.book_id || "書籍ID未設定";
@@ -726,7 +732,10 @@ module.exports = async (req, res) => {
                   username,
                   book_title: resolved?.title || rawBookId,
                   rating: p.rating,
-                  comment: p.comment,
+                  comment:
+                    p.is_spoiler === true
+                      ? "ネタバレを含む投稿です。詳細画面で内容を確認できます。"
+                      : p.comment,
                   date: p.created_at
                     ? new Date(p.created_at).toLocaleDateString("ja-JP")
                     : "",
@@ -792,6 +801,7 @@ module.exports = async (req, res) => {
         </div>
         <p class="post-comment">"${escapeHtml(p.comment)}"</p>
         <small style="color:#888;">投稿日: ${escapeHtml(p.date)}</small>
+        <p><a href="${SITE_URL}/posts/${encodeURIComponent(String(p.id || ""))}">レビュー詳細を読む</a></p>
       </div>
     `,
       )
@@ -813,6 +823,8 @@ module.exports = async (req, res) => {
     const canonicalPath = canonicalProfilePath(
       user?.user_id || user?.username || requestedProfileId || "",
     );
+    const canIndexProfile =
+      profileSummaryIndexable || profileHasIndexableReview;
     const html = renderPage({
       title: `${escapeHtml(username)} のプロフィール`,
       description: buildProfileDescription(username, stats),
@@ -837,10 +849,13 @@ module.exports = async (req, res) => {
         description: escapeHtml(bio),
       },
       pagePath: canonicalPath,
-      robots: "index,follow",
+      robots: canIndexProfile ? "index,follow" : "noindex,follow",
     });
 
     res.setHeader("Content-Type", "text/html; charset=utf-8");
+    if (!canIndexProfile) {
+      res.setHeader("X-Robots-Tag", "noindex, follow");
+    }
     setDiagnosticsHeader(res, diagnostics);
     return res.status(200).send(html);
   }
