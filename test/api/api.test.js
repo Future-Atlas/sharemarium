@@ -158,11 +158,11 @@ test("production sitemap includes fixed pages and public profile canonical URLs"
   const res = responseRecorder();
   await sitemap({}, res);
   assert.equal(res.statusCode, 200);
-  assert.match(res.body, /<loc>https:\/\/sharemarium\.com\/<\/loc>/);
-  assert.match(res.body, /<loc>https:\/\/sharemarium\.com\/privacy<\/loc>/);
+  assert.match(res.body, /<loc>https:\/\/www\.sharemarium\.com\/<\/loc>/);
+  assert.match(res.body, /<loc>https:\/\/www\.sharemarium\.com\/privacy<\/loc>/);
   assert.match(
     res.body,
-    /<loc>https:\/\/sharemarium\.com\/users\/reader_1<\/loc>/,
+    /<loc>https:\/\/www\.sharemarium\.com\/users\/reader_1<\/loc>/,
   );
   assert.doesNotMatch(res.body, /\/users\/private_user/);
   assert.doesNotMatch(res.body, /\/users\/suspended_user/);
@@ -200,7 +200,7 @@ test("production sitemap falls back to fixed URLs when Supabase fails", async ()
   const res = responseRecorder();
   await sitemap({}, res);
   assert.equal(res.statusCode, 200);
-  assert.match(res.body, /<loc>https:\/\/sharemarium\.com\/<\/loc>/);
+  assert.match(res.body, /<loc>https:\/\/www\.sharemarium\.com\/<\/loc>/);
   assert.doesNotMatch(res.body, /\/users\//);
   assert.doesNotMatch(res.body, /\/book\//);
   assert.doesNotMatch(res.body, /konbini-ningen|midnight-library/);
