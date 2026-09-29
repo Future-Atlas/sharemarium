@@ -7,7 +7,6 @@ const root = path.join(__dirname, "../..");
 const read = (relativePath) =>
   fs.readFileSync(path.join(root, relativePath), "utf8");
 
-const CANONICAL_ORIGIN = "https://www.sharemarium.com";
 const BARE_ORIGIN_RE = /https:\/\/sharemarium\.com(?=\/|["'`\s])/;
 
 test("all crawler-facing production SEO surfaces use the www canonical origin", () => {
@@ -32,7 +31,7 @@ test("all crawler-facing production SEO surfaces use the www canonical origin", 
 
   assert.match(
     read("web/index.html"),
-    new RegExp(`rel="canonical" href="${CANONICAL_ORIGIN.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}\/"`),
+    /rel="canonical" href="https:\/\/www\.sharemarium\.com\/"/,
   );
   assert.match(
     read("web/robots.txt"),
