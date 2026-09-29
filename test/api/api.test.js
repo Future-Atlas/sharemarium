@@ -344,7 +344,7 @@ test("genre SEO pages never enable AdSense even when books are available", async
     const res = responseRecorder();
     await seo({ query: { path: pathName } }, res);
     assert.equal(res.statusCode, 200);
-    assert.match(res.body, /index,follow/);
+    assert.match(res.body, /noindex,follow/);
     assert.doesNotMatch(res.body, /pagead2\.googlesyndication\.com/);
     assert.doesNotMatch(res.body, /__sharemariumAdsAllowed = true/);
   }
@@ -359,6 +359,27 @@ test("genre SEO pages never enable AdSense even when books are available", async
   delete process.env.RAKUTEN_APP_ID;
   delete process.env.RAKUTEN_ACCESS_KEY;
   delete process.env.RAKUTEN_REFERER;
+});
+
+test("crawler home navigation does not promote thin third-party genre pages", () => {
+  const source = fs.readFileSync(
+    path.join(__dirname, "../../api/seo.js"),
+    "utf8",
+  );
+
+  const navigationStart = source.indexOf("function siteNavigationStructuredData()");
+  const navigationEnd = source.indexOf("function sectionByGenrePath", navigationStart);
+  const navigation = source.slice(navigationStart, navigationEnd);
+  assert.doesNotMatch(navigation, /genre\/recommended|genre\/western|genre\/popular/);
+  assert.match(navigation, /公開レビュー/);
+  assert.match(navigation, /運営者情報/);
+
+  const primaryLinksStart = source.indexOf("const primaryLinksHtml");
+  const primaryLinksEnd = source.indexOf("const canShowAdsOnHome", primaryLinksStart);
+  const primaryLinks = source.slice(primaryLinksStart, primaryLinksEnd);
+  assert.doesNotMatch(primaryLinks, /genre\/recommended|genre\/western|genre\/popular/);
+  assert.match(primaryLinks, /\/posts/);
+  assert.match(primaryLinks, /\/about/);
 });
 
 test("genre SEO pages are noindex when no books are available", async () => {
