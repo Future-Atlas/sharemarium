@@ -1,6 +1,6 @@
 const { isIndexableReview } = require("./_seo_content_quality");
 
-const SITE_URL = "https://sharemarium.com";
+const SITE_URL = "https://www.sharemarium.com";
 const SITE_NAME = "Sharemarium";
 const SUPABASE_URL = process.env.SUPABASE_URL || "";
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "";
