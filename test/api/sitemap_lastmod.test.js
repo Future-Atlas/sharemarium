@@ -41,7 +41,7 @@ test("sitemap omits fixed-page lastmod when SEO_LASTMOD is not configured", asyn
   await sitemap({}, res);
 
   assert.equal(res.statusCode, 200);
-  assert.match(res.body, /<loc>https:\/\/sharemarium\.com\/<\/loc>/);
+  assert.match(res.body, /<loc>https:\/\/www\.sharemarium\.com\/<\/loc>/);
   assert.doesNotMatch(res.body, /<lastmod>/);
   assert.doesNotMatch(res.body, /2026-09-02/);
 
