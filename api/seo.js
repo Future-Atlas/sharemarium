@@ -1137,7 +1137,6 @@ module.exports = async (req, res) => {
       books = [];
     }
 
-    const hasGenreBooks = books.length > 0;
     const detailLinks = "";
 
     const html = renderPage({
@@ -1247,14 +1246,15 @@ module.exports = async (req, res) => {
   const timelineHtml = recentPosts
     .map(
       (p) => `
-    <div class="post-card">
+    <article class="post-card">
       <div class="post-header">
         <strong>${escapeHtml(p.username)} さん のレビュー - 『${escapeHtml(p.book_title)}』</strong>
         <span class="post-rating">★ ${p.rating}/5</span>
       </div>
       <p class="post-comment">"${escapeHtml(p.comment)}"</p>
       <small style="color:#888;">投稿日: ${escapeHtml(p.date)}</small>
-    </div>
+      <p><a href="${SITE_URL}/posts/${encodeURIComponent(String(p.id || ""))}">レビュー詳細を読む</a></p>
+    </article>
   `,
     )
     .join("");
@@ -1273,8 +1273,8 @@ module.exports = async (req, res) => {
                 <p>アプリ内アカウントでログインしたユーザーがレビュー投稿できます。</p>
             </div>
             <div class="post-card">
-                <strong>Sharemariumの対象ジャンルは何ですか？</strong>
-                <p>おすすめの本、洋書、人気作品を中心に紹介しています。</p>
+                <strong>ネタバレを含む感想は投稿できますか？</strong>
+                <p>投稿時にネタバレを含むことを設定でき、閲覧者が意図せず内容を読まないように配慮しています。</p>
             </div>
         `;
   const primaryLinksHtml = `
