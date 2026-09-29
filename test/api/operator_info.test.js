@@ -44,7 +44,7 @@ for (const environment of ['production', 'preview']) {
       const sitemap = recorder();
       delete require.cache[require.resolve('../../api/sitemap')];
       await require('../../api/sitemap')({}, sitemap);
-      assert.match(sitemap.body, /<loc>https:\/\/sharemarium.com\/about<\/loc>/);
+      assert.match(sitemap.body, /<loc>https:\/\/www.sharemarium.com\/about<\/loc>/);
     } finally {
       process.env = previous;
       global.fetch = originalFetch;
