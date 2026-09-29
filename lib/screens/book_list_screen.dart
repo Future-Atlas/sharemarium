@@ -769,6 +769,9 @@ class _BookListScreenState extends State<BookListScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         _buildSearchBar(),
+                        if (widget.initialGenre == null &&
+                            _controller.searchQuery.isEmpty)
+                          _buildServiceIntroduction(),
                         if (_controller.searchQuery.isNotEmpty)
                           _buildSearchResults()
                         else ...[
@@ -937,6 +940,128 @@ class _BookListScreenState extends State<BookListScreen> {
                   vertical: 14,
                 ),
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildServiceIntroduction() {
+    final theme = Theme.of(context);
+    final textColor = theme.textTheme.bodyMedium?.color;
+    final mutedColor = textColor?.withValues(alpha: 0.72);
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 28),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        border: Border.all(
+          color: const Color(0xFFD00303).withValues(alpha: 0.28),
+        ),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Sharemariumでできること',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Sharemariumは、読んだ本の感想を自分の言葉で記録し、ほかの読者のレビューから新しい本や視点に出会うための読書レビューSNSです。',
+            style: TextStyle(color: textColor, height: 1.65),
+          ),
+          const SizedBox(height: 18),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              _buildServicePoint(
+                icon: Icons.rate_review_outlined,
+                title: '読書体験をレビューとして残す',
+                description:
+                    '星評価だけでなく、印象に残った点や読後の考えを文章で記録できます。ネタバレを含む投稿は明示して公開できます。',
+              ),
+              _buildServicePoint(
+                icon: Icons.people_outline,
+                title: 'ほかの読者の感想に触れる',
+                description:
+                    '公開レビューや返信、リアクションを通じて、同じ作品を読んだ人の異なる見方や次に読む本の候補を見つけられます。',
+              ),
+              _buildServicePoint(
+                icon: Icons.menu_book_outlined,
+                title: '書籍情報と利用者レビューを分けて表示',
+                description:
+                    'タイトル・著者・書影などは外部の書籍情報を利用する場合がありますが、Sharemariumのレビュー本文は利用者自身の読書体験にもとづく投稿です。',
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              OutlinedButton.icon(
+                onPressed: () => Navigator.of(context).pushNamed('/posts'),
+                icon: const Icon(Icons.forum_outlined),
+                label: const Text('公開レビューを見る'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(context).pushNamed('/about'),
+                child: const Text('サービス・運営方針について'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '本の一覧そのものではなく、実際に読んだ人のレビューや交流がSharemariumの中心コンテンツです。',
+            style: TextStyle(
+              color: mutedColor,
+              fontSize: 12,
+              height: 1.5,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildServicePoint({
+    required IconData icon,
+    required String title,
+    required String description,
+  }) {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minWidth: 220, maxWidth: 360),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 22, color: const Color(0xFFD00303)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  description,
+                  style: TextStyle(
+                    color: Theme.of(
+                      context,
+                    ).textTheme.bodyMedium?.color?.withValues(alpha: 0.78),
+                    fontSize: 13,
+                    height: 1.55,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
