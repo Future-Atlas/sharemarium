@@ -24,7 +24,7 @@ const RAKUTEN_BOOK_API =
 const RAKUTEN_FOREIGN_BOOK_API =
   "https://openapi.rakuten.co.jp/services/api/BooksForeignBook/Search/20170404";
 const NDL_OPENSEARCH_API = "https://ndlsearch.ndl.go.jp/api/opensearch";
-const SITE_URL = "https://sharemarium.com";
+const SITE_URL = "https://www.sharemarium.com";
 const SITE_NAME = "Sharemarium";
 const SITE_ALT_NAME = "シェアマリウム";
 const SITE_BRAND = `${SITE_NAME}（${SITE_ALT_NAME}）`;
