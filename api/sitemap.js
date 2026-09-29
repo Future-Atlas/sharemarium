@@ -4,7 +4,7 @@ const {
   isPostsIndexIndexable,
 } = require("./_seo_content_quality");
 
-const SITE_URL = "https://sharemarium.com";
+const SITE_URL = "https://www.sharemarium.com";
 const FIXED_LASTMOD = normalizedLastmod(process.env.SEO_LASTMOD);
 const IS_PRODUCTION = process.env.VERCEL_ENV === "production";
 const SUPABASE_URL = process.env.SUPABASE_URL;

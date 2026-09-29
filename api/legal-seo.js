@@ -1,7 +1,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
-const SITE_URL = "https://sharemarium.com";
+const SITE_URL = "https://www.sharemarium.com";
 const SITE_NAME = "Sharemarium";
 
 // Keep the crawler representation tied to the exact Flutter legal-document

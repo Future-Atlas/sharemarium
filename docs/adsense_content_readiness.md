@@ -35,6 +35,18 @@ for ads.
 - Thin, private, suspended, missing, error, settings, login, form, and other
   non-content pages must not become indexable ad inventory.
 
+## Canonical-domain requirements
+
+- The production canonical origin is `https://www.sharemarium.com`.
+- `https://sharemarium.com` must remain a redirect-only origin.
+- The legacy Vercel hostname `book-case-u9uq.vercel.app` must permanently
+  redirect every path to the corresponding `www.sharemarium.com` path.
+- Canonical tags, Open Graph URLs, sitemap URLs and robots.txt must use the
+  same `www` origin.
+- Google Search Console should be submitted
+  `https://www.sharemarium.com/sitemap.xml`, not the redirecting bare-domain
+  sitemap.
+
 ## Before requesting another AdSense review
 
 Do not resubmit solely because the CI is green. Confirm all of the following:

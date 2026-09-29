@@ -1,7 +1,7 @@
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 
-const DEFAULT_BASE_URL = "https://sharemarium.com";
+const DEFAULT_BASE_URL = "https://www.sharemarium.com";
 const DEFAULT_ATTEMPTS = 6;
 const DEFAULT_RETRY_DELAY_MS = 8000;
 const DEFAULT_TIMEOUT_MS = 15000;
