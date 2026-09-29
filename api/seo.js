@@ -1053,6 +1053,12 @@ module.exports = async (req, res) => {
           <h3>Sharemariumについて</h3>
           <p>Sharemarium（シェアマリウム）は、伊能 龍之介が企画・開発・運営する読書記録Webサービスです。</p>
           <p>読んだ本を記録し、感想をみんなと共有できる読書レビューSNSです。自分用の読書記録にも、お友だちとの感想共有にも使えるSharemariumで、あなただけの本棚を作りましょう。</p>
+          <h3>サービスの目的</h3>
+          <p>Sharemariumは、読んだ本の記録を残すだけでなく、同じ本を読んだ人の感想に触れ、新しい本との出会いや読書の振り返りにつなげることを目的としています。</p>
+          <h3>掲載コンテンツについて</h3>
+          <p>書籍のタイトル・著者・書影などの書籍情報は外部サービスから提供される場合があります。一方、レビューや読書記録などSharemarium上の投稿は、利用者自身の読書体験にもとづいて作成されるコンテンツです。</p>
+          <h3>運営方針</h3>
+          <p>公開・非公開設定、ネタバレ表示、通報・ブロックなどの機能を用意し、安心して読書体験を共有できる場を目指しています。公開情報や機能は継続的に確認し、必要に応じて改善します。</p>
           <h3>企画・開発・運営</h3>
           <p style="display:flex;flex-wrap:wrap;align-items:center;gap:12px;">伊能 龍之介 <a href="https://www.instagram.com/ryunosukeino/" target="_blank" rel="noopener noreferrer">Instagram</a></p>
           <h3>共同開発</h3>
