@@ -1,5 +1,6 @@
 const {
   isIndexableReview,
+  isIndexableProfileSummary,
   isPostsIndexIndexable,
 } = require("./_seo_content_quality");
 
@@ -72,18 +73,13 @@ function canonicalProfilePath(profile) {
   return `/users/${encodeURIComponent(rawId)}`;
 }
 
-function hasPublicProfileContent(profile) {
-  const bio = String(profile?.bio || "").trim();
-  return bio.length > 0 || Number(profile?.read_count || 0) > 0;
-}
-
 function isIndexableProfile(profile) {
   return (
     profile &&
     profile.is_private !== true &&
     profile.is_suspended !== true &&
     canonicalProfilePath(profile) !== null &&
-    hasPublicProfileContent(profile)
+    isIndexableProfileSummary(profile)
   );
 }
 
