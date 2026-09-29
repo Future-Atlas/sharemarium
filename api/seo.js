@@ -2,6 +2,11 @@
 // Policy: no Google APIs. Data source order is Rakuten first, then NDL fallback.
 
 const { requestRakuten } = require("./_rakuten_request");
+const { evaluatePublisherContent, isSubstantivePublicReview } = require("./_home_ad_eligibility");
+const {
+  isIndexableProfileSummary,
+  isIndexableReview,
+} = require("./_seo_content_quality");
 
 const SUPABASE_URL = process.env.SUPABASE_URL || "";
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "";
@@ -375,10 +380,10 @@ function faqStructuredData() {
       },
       {
         "@type": "Question",
-        name: "Sharemariumの対象ジャンルは何ですか？",
+        name: "ネタバレを含む感想は投稿できますか？",
         acceptedAnswer: {
           "@type": "Answer",
-          text: "おすすめの本、洋書、人気作品を中心に紹介しています。",
+          text: "投稿時にネタバレを含むことを設定でき、閲覧者が意図せず内容を読まないように配慮しています。",
         },
       },
     ],
@@ -447,9 +452,9 @@ function webApplicationStructuredData() {
 function siteNavigationStructuredData() {
   const navItems = [
     { name: "ホーム", url: `${SITE_URL}/` },
-    { name: "おすすめの本", url: `${SITE_URL}/genre/recommended` },
-    { name: "洋書", url: `${SITE_URL}/genre/western` },
-    { name: "人気作品", url: `${SITE_URL}/genre/popular` },
+    { name: "公開レビュー", url: `${SITE_URL}/posts` },
+    { name: "運営者情報", url: `${SITE_URL}/about` },
+    { name: "お問い合わせ", url: `${SITE_URL}/contact` },
     { name: "プライバシーポリシー", url: `${SITE_URL}/privacy` },
     { name: "利用規約", url: `${SITE_URL}/terms` },
   ];
@@ -634,9 +639,9 @@ module.exports = async (req, res) => {
       <main>
                 <nav style="margin: 0 0 16px 0; font-size: 0.95em;">
                     <a href="${SITE_URL}/">ホーム</a> |
-                    <a href="${SITE_URL}/genre/recommended">おすすめの本</a> |
-                    <a href="${SITE_URL}/genre/western">洋書</a> |
-                    <a href="${SITE_URL}/genre/popular">人気作品</a>
+                    <a href="${SITE_URL}/posts">公開レビュー</a> |
+                    <a href="${SITE_URL}/about">運営者情報</a> |
+                    <a href="${SITE_URL}/contact">お問い合わせ</a>
                 </nav>
         ${content}
       </main>
@@ -655,7 +660,9 @@ module.exports = async (req, res) => {
     let stats = { read: 0, followers: 0, following: 0 };
     let posts = [];
     let favorites = [];
-    let hasReliableData = false;
+    let profileSummaryIndexable = false;
+    let profileHasIndexableReview = false;
+    let user = null;
     const isbnCache = new Map();
     const requestedProfileId = (() => {
       const match = decodedPath.match(
@@ -673,7 +680,7 @@ module.exports = async (req, res) => {
         const profiles = await supabaseGet(
           `profiles?${profileFilter}&select=id,username,user_id,bio,read_count,followers_count,following_count,is_private,is_suspended`,
         );
-        const user = Array.isArray(profiles) ? profiles[0] : null;
+        user = Array.isArray(profiles) ? profiles[0] : null;
         if (user) {
           const isPublic =
             user.is_private !== true && user.is_suspended !== true;
@@ -699,7 +706,7 @@ module.exports = async (req, res) => {
             return res.status(404).send(forbiddenHtml);
           }
 
-          hasReliableData = true;
+          profileSummaryIndexable = isIndexableProfileSummary(user);
           username = user.username;
           bio = user.bio || bio;
           stats.read = user.read_count || stats.read;
@@ -707,10 +714,11 @@ module.exports = async (req, res) => {
           stats.following = user.following_count || stats.following;
 
           const fetchedPosts = await supabaseGet(
-            `posts?profile_id=eq.${user.id}&select=id,book_id,rating,comment,created_at&order=created_at.desc&limit=10`,
+            `posts?profile_id=eq.${user.id}&select=id,book_id,rating,comment,created_at,is_spoiler&order=created_at.desc&limit=10`,
           );
 
           if (Array.isArray(fetchedPosts) && fetchedPosts.length > 0) {
+            profileHasIndexableReview = fetchedPosts.some(isIndexableReview);
             posts = await Promise.all(
               fetchedPosts.map(async (p) => {
                 const rawBookId = p.book_id || "書籍ID未設定";
@@ -725,7 +733,10 @@ module.exports = async (req, res) => {
                   username,
                   book_title: resolved?.title || rawBookId,
                   rating: p.rating,
-                  comment: p.comment,
+                  comment:
+                    p.is_spoiler === true
+                      ? "ネタバレを含む投稿です。詳細画面で内容を確認できます。"
+                      : p.comment,
                   date: p.created_at
                     ? new Date(p.created_at).toLocaleDateString("ja-JP")
                     : "",
@@ -791,6 +802,7 @@ module.exports = async (req, res) => {
         </div>
         <p class="post-comment">"${escapeHtml(p.comment)}"</p>
         <small style="color:#888;">投稿日: ${escapeHtml(p.date)}</small>
+        <p><a href="${SITE_URL}/posts/${encodeURIComponent(String(p.id || ""))}">レビュー詳細を読む</a></p>
       </div>
     `,
       )
@@ -812,6 +824,8 @@ module.exports = async (req, res) => {
     const canonicalPath = canonicalProfilePath(
       user?.user_id || user?.username || requestedProfileId || "",
     );
+    const canIndexProfile =
+      profileSummaryIndexable || profileHasIndexableReview;
     const html = renderPage({
       title: `${escapeHtml(username)} のプロフィール`,
       description: buildProfileDescription(username, stats),
@@ -836,10 +850,13 @@ module.exports = async (req, res) => {
         description: escapeHtml(bio),
       },
       pagePath: canonicalPath,
-      robots: "index,follow",
+      robots: canIndexProfile ? "index,follow" : "noindex,follow",
     });
 
     res.setHeader("Content-Type", "text/html; charset=utf-8");
+    if (!canIndexProfile) {
+      res.setHeader("X-Robots-Tag", "noindex, follow");
+    }
     setDiagnosticsHeader(res, diagnostics);
     return res.status(200).send(html);
   }
@@ -1052,6 +1069,12 @@ module.exports = async (req, res) => {
           <h3>Sharemariumについて</h3>
           <p>Sharemarium（シェアマリウム）は、伊能 龍之介が企画・開発・運営する読書記録Webサービスです。</p>
           <p>読んだ本を記録し、感想をみんなと共有できる読書レビューSNSです。自分用の読書記録にも、お友だちとの感想共有にも使えるSharemariumで、あなただけの本棚を作りましょう。</p>
+          <h3>サービスの目的</h3>
+          <p>Sharemariumは、読んだ本の記録を残すだけでなく、同じ本を読んだ人の感想に触れ、新しい本との出会いや読書の振り返りにつなげることを目的としています。</p>
+          <h3>掲載コンテンツについて</h3>
+          <p>書籍のタイトル・著者・書影などの書籍情報は外部サービスから提供される場合があります。一方、レビューや読書記録などSharemarium上の投稿は、利用者自身の読書体験にもとづいて作成されるコンテンツです。</p>
+          <h3>運営方針</h3>
+          <p>公開・非公開設定、ネタバレ表示、通報・ブロックなどの機能を用意し、安心して読書体験を共有できる場を目指しています。公開情報や機能は継続的に確認し、必要に応じて改善します。</p>
           <h3>企画・開発・運営</h3>
           <p style="display:flex;flex-wrap:wrap;align-items:center;gap:12px;">伊能 龍之介 <a href="https://www.instagram.com/ryunosukeino/" target="_blank" rel="noopener noreferrer">Instagram</a></p>
           <h3>共同開発</h3>
@@ -1136,7 +1159,6 @@ module.exports = async (req, res) => {
       books = [];
     }
 
-    const hasGenreBooks = books.length > 0;
     const detailLinks = "";
 
     const html = renderPage({
@@ -1165,7 +1187,9 @@ module.exports = async (req, res) => {
         itemListStructuredData(genreSection, books, decodedPath),
       ],
       pagePath: decodedPath,
-      robots: hasGenreBooks ? "index,follow" : "noindex,nofollow",
+      // Genre pages are primarily third-party catalog data. Keep them out of
+      // search until Sharemarium adds substantial manually curated content.
+      robots: "noindex,follow",
     });
 
     res.setHeader("Content-Type", "text/html; charset=utf-8");
@@ -1194,54 +1218,28 @@ module.exports = async (req, res) => {
     return res.status(404).send(notFoundHtml);
   }
 
-  let recommendedBooks = [];
-  let westernBooks = [];
-  let popularBooks = [];
   let recentPosts = [];
-  let hasReliableData = false;
+  let publisherContentEvaluation = {
+    eligible: false,
+    substantiveReviewCount: 0,
+    distinctAuthorCount: 0,
+  };
 
   try {
-    const [recommendedR, westernR, popularR] = await Promise.all([
-      fetchRakutenSection("おすすめの本", diagnostics),
-      fetchRakutenSection("洋書", diagnostics),
-      fetchRakutenSection("人気作品", diagnostics),
-    ]);
+    const rawPosts =
+      (await supabaseGet(
+        "posts?select=id,profile_id,book_id,rating,comment,created_at,is_spoiler,profiles(username)&order=created_at.desc&limit=100",
+      )) || [];
 
-    const [recommendedN, westernN, popularN] = ENABLE_NDL_FALLBACK
-      ? await Promise.all([
-          recommendedR.length
-            ? Promise.resolve([])
-            : fetchNdlSection("おすすめの本", diagnostics),
-          westernR.length
-            ? Promise.resolve([])
-            : fetchNdlSection("洋書", diagnostics),
-          popularR.length
-            ? Promise.resolve([])
-            : fetchNdlSection("人気作品", diagnostics),
-        ])
-      : [[], [], []];
+    publisherContentEvaluation = evaluatePublisherContent(rawPosts);
+    const substantivePosts = rawPosts
+      .filter(isSubstantivePublicReview)
+      .slice(0, 8);
 
-    recommendedBooks = recommendedR.length ? recommendedR : recommendedN;
-    westernBooks = westernR.length ? westernR : westernN;
-    popularBooks = popularR.length ? popularR : popularN;
-
-    if (
-      recommendedBooks.length > 0 ||
-      westernBooks.length > 0 ||
-      popularBooks.length > 0
-    ) {
-      hasReliableData = true;
-    }
-
-    const rawPosts = await supabaseGet(
-      "posts?select=id,book_id,rating,comment,created_at,profiles(username)&order=created_at.desc&limit=5",
-    );
-
-    if (rawPosts && rawPosts.length > 0) {
-      hasReliableData = true;
+    if (substantivePosts.length > 0) {
       const isbnCache = new Map();
       recentPosts = await Promise.all(
-        rawPosts.map(async (p) => {
+        substantivePosts.map(async (p) => {
           const rawBookId = p.book_id || "書籍ID未設定";
           let resolved = isbnCache.get(rawBookId);
           if (resolved === undefined) {
@@ -1270,14 +1268,15 @@ module.exports = async (req, res) => {
   const timelineHtml = recentPosts
     .map(
       (p) => `
-    <div class="post-card">
+    <article class="post-card">
       <div class="post-header">
         <strong>${escapeHtml(p.username)} さん のレビュー - 『${escapeHtml(p.book_title)}』</strong>
         <span class="post-rating">★ ${p.rating}/5</span>
       </div>
       <p class="post-comment">"${escapeHtml(p.comment)}"</p>
       <small style="color:#888;">投稿日: ${escapeHtml(p.date)}</small>
-    </div>
+      <p><a href="${SITE_URL}/posts/${encodeURIComponent(String(p.id || ""))}">レビュー詳細を読む</a></p>
+    </article>
   `,
     )
     .join("");
@@ -1296,31 +1295,28 @@ module.exports = async (req, res) => {
                 <p>アプリ内アカウントでログインしたユーザーがレビュー投稿できます。</p>
             </div>
             <div class="post-card">
-                <strong>Sharemariumの対象ジャンルは何ですか？</strong>
-                <p>おすすめの本、洋書、人気作品を中心に紹介しています。</p>
+                <strong>ネタバレを含む感想は投稿できますか？</strong>
+                <p>投稿時にネタバレを含むことを設定でき、閲覧者が意図せず内容を読まないように配慮しています。</p>
             </div>
         `;
   const primaryLinksHtml = `
             <h2>主要ページ</h2>
             <ul>
-                <li><a href="${SITE_URL}/genre/recommended">おすすめの本一覧</a></li>
-                <li><a href="${SITE_URL}/genre/western">洋書一覧</a></li>
-                <li><a href="${SITE_URL}/genre/popular">人気作品一覧</a></li>
+                <li><a href="${SITE_URL}/posts">公開レビュー一覧</a></li>
+                <li><a href="${SITE_URL}/about">運営者情報</a></li>
                 <li><a href="${SITE_URL}/privacy">プライバシーポリシー</a></li>
                 <li><a href="${SITE_URL}/terms">利用規約</a></li>
                 <li><a href="${SITE_URL}/community-guidelines">コミュニティガイドライン</a></li>
                 <li><a href="${SITE_URL}/infringement-policy">権利侵害・通報ポリシー</a></li>
                 <li><a href="${SITE_URL}/external-transmission">外部送信に関する公表事項</a></li>
                 <li><a href="${SITE_URL}/contact">お問い合わせ</a></li>
-                <li><a href="${SITE_URL}/about">運営者情報</a></li>
             </ul>
         `;
 
-  const canShowAdsOnHome =
-    recommendedBooks.length > 0 ||
-    westernBooks.length > 0 ||
-    popularBooks.length > 0 ||
-    recentPosts.length > 0;
+  // Third-party book catalog results never make the page eligible for ads.
+  // Ads are enabled only after enough original public reviews from multiple
+  // authors exist. seo-home repeats this check and fails closed.
+  const canShowAdsOnHome = publisherContentEvaluation.eligible;
 
   const html = renderPage({
     title: SITE_TITLE,
@@ -1341,17 +1337,12 @@ module.exports = async (req, res) => {
             <p>読んだ本を忘れずに記録したい方、所有している本を整理したい方、読書習慣を振り返りたい方に向けたサービスです。</p>
             <p><a href="${SITE_URL}/">Sharemariumを始める</a> / <a href="${SITE_URL}/contact">お問い合わせ</a></p>
             </section>
-      <h2>おすすめの本</h2>
-      <div>${renderBookList(recommendedBooks)}</div>
-
-      <h2>洋書</h2>
-      <div>${renderBookList(westernBooks)}</div>
-
-      <h2>人気作品</h2>
-      <div>${renderBookList(popularBooks)}</div>
-
-      <h2>タイムライン (最新レビュー)</h2>
-      <div>${timelineHtml.length > 0 ? timelineHtml : "<p>現在、表示できる投稿がありません。</p>"}</div>
+      <section>
+        <h2>Sharemariumで公開された最新レビュー</h2>
+        <p>実際にSharemariumの利用者が投稿した読書レビューです。書籍カタログの転載ではなく、読書体験にもとづく感想を掲載しています。</p>
+        <div>${timelineHtml.length > 0 ? timelineHtml : "<p>現在、検索公開基準を満たすレビューを準備中です。</p>"}</div>
+        <p><a href="${SITE_URL}/posts">公開レビュー一覧を見る</a></p>
+      </section>
 
             ${primaryLinksHtml}
       ${faqHtml}
@@ -1375,7 +1366,9 @@ module.exports = async (req, res) => {
       ...siteNavigationStructuredData(),
     ],
     pagePath: decodedPath || "/",
-    robots: hasReliableData ? "index,follow" : "noindex,nofollow",
+    // The product landing page is publisher-authored and remains indexable.
+    // Ad eligibility is controlled separately by original UGC thresholds.
+    robots: "index,follow",
   });
 
   res.setHeader("Content-Type", "text/html; charset=utf-8");
