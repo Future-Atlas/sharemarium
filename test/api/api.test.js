@@ -119,7 +119,7 @@ test("production sitemap includes fixed pages and public profile canonical URLs"
         id: "public-profile",
         username: "公開ユーザー",
         user_id: "reader_1",
-        bio: "読書記録を公開しています。",
+        bio: "読書を通じて感じたことや、作品ごとの印象を記録しています。ジャンルを問わず読んだ本の感想を丁寧に残しています。",
         read_count: 3,
         is_private: false,
         is_suspended: false,
@@ -265,6 +265,63 @@ test("SEO handler returns noindex 404 for a missing profile", async () => {
   assert.match(res.body, /noindex/);
 });
 
+test("SEO handler noindexes a thin public profile", async () => {
+  const previousEnv = {
+    VERCEL_ENV: process.env.VERCEL_ENV,
+    SUPABASE_URL: process.env.SUPABASE_URL,
+    SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY,
+  };
+  process.env.VERCEL_ENV = "production";
+  process.env.SUPABASE_URL = "https://supabase.example";
+  process.env.SUPABASE_ANON_KEY = "public-key";
+  const originalFetch = global.fetch;
+
+  global.fetch = async (url) => {
+    const requested = String(url);
+    if (requested.includes("/rest/v1/profiles")) {
+      return new Response(
+        JSON.stringify([
+          {
+            id: "thin-user",
+            username: "thin",
+            user_id: "thin_user",
+            bio: "",
+            read_count: 0,
+            followers_count: 0,
+            following_count: 0,
+            is_private: false,
+            is_suspended: false,
+          },
+        ]),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    if (requested.includes("/rest/v1/posts") || requested.includes("/rest/v1/favorites")) {
+      return new Response("[]", {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    throw new Error(`unexpected URL: ${requested}`);
+  };
+
+  delete require.cache[require.resolve("../../api/seo")];
+  const seo = require("../../api/seo");
+  const res = responseRecorder();
+  await seo({ query: { path: "/users/thin_user" } }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.match(res.body, /<meta name="robots" content="noindex,follow">/);
+  assert.equal(res.headers["X-Robots-Tag"], "noindex, follow");
+
+  global.fetch = originalFetch;
+  for (const [key, value] of Object.entries(previousEnv)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+  delete require.cache[require.resolve("../../api/seo")];
+});
+
 test("SEO handler returns noindex 404 for a private profile", async () => {
   process.env.VERCEL_ENV = "production";
   process.env.SUPABASE_URL = "https://supabase.example";
@@ -344,7 +401,7 @@ test("genre SEO pages never enable AdSense even when books are available", async
     const res = responseRecorder();
     await seo({ query: { path: pathName } }, res);
     assert.equal(res.statusCode, 200);
-    assert.match(res.body, /index,follow/);
+    assert.match(res.body, /noindex,follow/);
     assert.doesNotMatch(res.body, /pagead2\.googlesyndication\.com/);
     assert.doesNotMatch(res.body, /__sharemariumAdsAllowed = true/);
   }
@@ -361,6 +418,33 @@ test("genre SEO pages never enable AdSense even when books are available", async
   delete process.env.RAKUTEN_REFERER;
 });
 
+test("crawler home navigation does not promote thin third-party genre pages", () => {
+  const source = fs.readFileSync(
+    path.join(__dirname, "../../api/seo.js"),
+    "utf8",
+  );
+
+  const navigationStart = source.indexOf("function siteNavigationStructuredData()");
+  const navigationEnd = source.indexOf("function sectionByGenrePath", navigationStart);
+  const navigation = source.slice(navigationStart, navigationEnd);
+  assert.doesNotMatch(navigation, /genre\/recommended|genre\/western|genre\/popular/);
+  assert.match(navigation, /公開レビュー/);
+  assert.match(navigation, /運営者情報/);
+
+  const renderNavStart = source.indexOf('<nav style="margin: 0 0 16px 0;');
+  const renderNavEnd = source.indexOf("</nav>", renderNavStart);
+  const renderNav = source.slice(renderNavStart, renderNavEnd);
+  assert.doesNotMatch(renderNav, /genre\/recommended|genre\/western|genre\/popular/);
+  assert.match(renderNav, /\/posts/);
+
+  const primaryLinksStart = source.indexOf("const primaryLinksHtml");
+  const primaryLinksEnd = source.indexOf("const canShowAdsOnHome", primaryLinksStart);
+  const primaryLinks = source.slice(primaryLinksStart, primaryLinksEnd);
+  assert.doesNotMatch(primaryLinks, /genre\/recommended|genre\/western|genre\/popular/);
+  assert.match(primaryLinks, /\/posts/);
+  assert.match(primaryLinks, /\/about/);
+});
+
 test("genre SEO pages are noindex when no books are available", async () => {
   process.env.VERCEL_ENV = "production";
   delete process.env.RAKUTEN_APP_ID;
@@ -372,7 +456,7 @@ test("genre SEO pages are noindex when no books are available", async () => {
   await seo({ query: { path: "/genre/recommended" } }, res);
 
   assert.equal(res.statusCode, 200);
-  assert.match(res.body, /noindex,nofollow/);
+  assert.match(res.body, /noindex,follow/);
   assert.doesNotMatch(res.body, /pagead2\.googlesyndication\.com/);
   delete process.env.VERCEL_ENV;
 });
