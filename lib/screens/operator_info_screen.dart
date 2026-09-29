@@ -54,6 +54,27 @@ class OperatorInfoScreen extends StatelessWidget {
                     style: TextStyle(fontSize: 16, height: 1.8),
                   ),
                   const SizedBox(height: 32),
+                  Text('サービスの目的', style: heading),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Sharemariumは、読んだ本の記録を残すだけでなく、同じ本を読んだ人の感想に触れ、新しい本との出会いや読書の振り返りにつなげることを目的としています。',
+                    style: TextStyle(fontSize: 16, height: 1.8),
+                  ),
+                  const SizedBox(height: 24),
+                  Text('掲載コンテンツについて', style: heading),
+                  const SizedBox(height: 12),
+                  const Text(
+                    '書籍のタイトル・著者・書影などの書籍情報は外部サービスから提供される場合があります。一方、レビューや読書記録などSharemarium上の投稿は、利用者自身の読書体験にもとづいて作成されるコンテンツです。',
+                    style: TextStyle(fontSize: 16, height: 1.8),
+                  ),
+                  const SizedBox(height: 24),
+                  Text('運営方針', style: heading),
+                  const SizedBox(height: 12),
+                  const Text(
+                    '公開・非公開設定、ネタバレ表示、通報・ブロックなどの機能を用意し、安心して読書体験を共有できる場を目指しています。公開情報や機能は継続的に確認し、必要に応じて改善します。',
+                    style: TextStyle(fontSize: 16, height: 1.8),
+                  ),
+                  const SizedBox(height: 32),
                   Text('企画・開発・運営', style: heading),
                   const SizedBox(height: 8),
                   Wrap(
