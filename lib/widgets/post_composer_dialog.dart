@@ -170,11 +170,21 @@ Future<bool> showPostComposerDialog({
                         textAlignVertical: TextAlignVertical.top,
                         style: const TextStyle(color: Colors.black87),
                         decoration: const InputDecoration(
-                          hintText: '感想を書いてください',
+                          hintText:
+                              '例：印象に残った場面、その理由、読後に考えたことなどを自分の言葉で書いてみましょう',
                           hintStyle: TextStyle(color: Colors.black54),
                           border: InputBorder.none,
                           isCollapsed: true,
                         ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      '短い感想でも投稿できます。あとで振り返ったときに分かるよう、作品のどこが印象に残ったか、なぜそう感じたかまで書くと読書記録として役立ちます。',
+                      style: TextStyle(
+                        color: Colors.black54,
+                        fontSize: 12,
+                        height: 1.45,
                       ),
                     ),
                   ],
