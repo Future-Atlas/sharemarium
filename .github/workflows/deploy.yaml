@@ -55,5 +55,5 @@ jobs:
 
       - name: Smoke test production
         env:
-          SMOKE_BASE_URL: https://sharemarium.com
+          SMOKE_BASE_URL: https://www.sharemarium.com
         run: node scripts/production-smoke.mjs
