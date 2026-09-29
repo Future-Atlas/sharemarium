@@ -46,8 +46,7 @@ test("legacy Vercel production host permanently redirects to the canonical www h
   assert.equal(redirect?.src, "/(.*)");
   assert.deepEqual(redirect?.has, [
     {
-      type: "header",
-      key: "host",
+      type: "host",
       value: "book-case-u9uq.vercel.app",
     },
   ]);
