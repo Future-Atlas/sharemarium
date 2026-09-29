@@ -125,7 +125,7 @@ test("review permalink renders a substantial public review as indexable HTML", a
   assert.match(res.body, /<meta name="robots" content="index,follow">/);
   assert.match(
     res.body,
-    new RegExp(`https://sharemarium\\.com/posts/${POST_ID}`),
+    new RegExp(`https://www.sharemarium\\.com/posts/${POST_ID}`),
   );
   assert.match(res.body, /『テスト書籍』のレビュー/);
   assert.match(res.body, /読書好き/);
